@@ -1,0 +1,2125 @@
+#!/usr/bin/perl -w
+
+# ----------------------
+# $Log: xedit-dns,v $
+# Revision 1.21  1998/03/04 16:06:22  turbo
+# Make sure perl does not complain about a unused/uninitialized variable,
+# FILES, it is initialized and used in the lib...
+#
+# Revision 1.20  1998/01/16 14:55:54  turbo
+# Perl changed the way it handled file handles... When we cyckle through the
+# file, make sure we only do that while ! eof.
+#
+# Revision 1.19  1998/01/13 11:44:24  turbo
+# use 'File::Basename' and 'File::Find' instead of home made functions...
+#
+# Revision 1.18  1998/01/12 03:09:57  turbo
+# * Deactivate the reverse input gadget automaticly if we are adding/editing a
+#   secondary domain, and activate otherwise...
+# * Disable the 'New real' entry button if we are adding/editing a secondary
+#   domain, and activate it otherwise...
+#
+# Revision 1.17  1997/10/28 16:53:56  turbo
+# * Changed some variables name to easier remember what the variable is used for.
+#   Uses: $dns_primary_zone		$dns_primary_reverse
+# 	$dns_primary_zone_file		$dns_primary_reverse_file
+#
+# 	$dns_secondary_zone		$dns_secondary_reverse
+# 	$dns_secondary_zone_file	$dns_secondary_reverse_file
+#
+# 	Hmmm... Many variables... Maby we can remove some... Next version
+# 	perhaps...
+# * Clear some variables when adding a new domain...
+# * If we are adding a secondary domain, we should not use a reverse... Hmmm...
+# * When we try to add a secondary domain, make sure we have a primary...
+# * When we load the zone file, we can have the 'IN' in ether the second or
+#   the third column, make sure we account for that... Also make sure we find
+#   the network address even if we don't have a reverse, we need that later
+#   when we save the secondary domain...
+# * Make sure we add the newly added domain to the global variable list...
+# * Added the function 'sort_list()' so that we can have the real/alias entries
+#   in a sorted way...
+#
+# Revision 1.16  1997/09/24 16:35:02  turbo
+# * Added the possibility for the envvar 'XADMIN_DEBUG'...
+#
+# Revision 1.15  1997/09/22 21:26:56  turbo
+# * When loading the zone file, make sure we remember the system data for later...
+# * If the NS line is a host/domain name, try to find out the IP address (for
+#   later)
+# * If we are adding a secondary domain, use the primary domains when creating
+#   default values, like the MX/NS/hosts etc... (This IS later... :)
+# * Forgot some more 'if( $DEBUG )'... I wonder how many I have left to discover...
+# * Moved the creation of serial number to a separate function, it is used in
+#   more places than one...
+# * If we are removing a secondary domain, do NOT remove the whole directory
+#   the zone file is located in, only the zone file!!! (Opsideysi)
+#
+# Revision 1.14  1997/09/22 03:33:45  turbo
+# * When adding a domain, always make sure the path etc is correct. Incase we
+#   make a mistake, we don't want to be forced to change all the values
+#   manually.
+# * If we don't have any domains, start out by creating one, instead of letting
+#   the user make the move.
+# * Added the 'Clear' button, incase we want to start all over from scratch...
+# * _DO NOT_ create/save the reverse file unless we have a reverse file, and
+#   we have so ordered...
+# * Cleaned up the saving of the zone/rev/boot files, they are hoppfully a lot
+#   nicer looking now...
+#
+# Revision 1.13  1997/09/20 17:12:13  turbo
+# * Changed the name of the function 'do_list_box()' to 'do_listbox()'...
+# * Changed the name of the function 'list_box_dns()' to 'listbox_dns()'...
+#
+# Revision 1.12  1997/08/24 02:10:08  turbo
+# Fixed some small buggs conserning the usual perl stuff... 'Variable not
+# initialized'... How I´m starting to hate that...
+#
+# Revision 1.11  1997/08/24 01:14:30  turbo
+# Fucked up the dating... My clock was two month ahead of real time... Edited
+# the CVSROOT dir.. Maby I shouldn't have... :)
+#
+# Revision 1.10  1997/09/23 22:19:21  turbo
+# * Don't die if we can not find the named config file...
+# * If the DNS directory don´t exists, atleast have a default dir ready...
+# * Don't forget the DNS cache file if starting from scratch...
+#
+# Revision 1.9  1997/09/23 13:41:57  turbo
+# * When debuging, use a COMPLETE 'virtual' file system, nothing from '/etc',
+#   but instead in './etc'...
+# * If there is no domains when we start, don't try to update the listboxes...
+# * If running in debug mode, make sure that the 'Restart' button is shadowed,
+#   we chould not be able to restart the nameserver in that case...
+# * Found a way to not'ting a '=~' ('!~' naturaly... *blush*)
+# * Made it possible to choose if adding a Primary or Secondary domain.
+# * When adding a domain:
+#     1. Make sure we check all the primary AND secondary domains to make sure
+#        the new one don't exists.
+#     2. Make sure that the default DNS variables is associated with the correct
+#        domain number.
+#     3. We should only add a zero to the month if the month is between january
+#        and october.
+# * When adding a primary domain:
+#     Make sure the reverse file is added automaticly.
+#
+# Revision 1.8  1997/08/10 14:30:06  turbo
+# * Added some relief to the frames, which makes the apparence look a little
+#   better.
+# * Added more detailed debugging. 0 is no debugging, 1 is total debugging
+#   and 2 is real action but with debug output.
+# * Moved the proc 'find_dir()' to the library since it was needed in the
+#   dns editor. No need to have the proc in both files...
+# * Added the choice to have a reverse file in the secondary domains (incase
+#   we are using IP aliasing), in which case it copies the zone file, but
+#   changes the extension (to .rev).
+# * Put up an error request instead of just print it to stdout incase of an
+#   error.
+# * If we change the network address, also change the real entries in the
+#   listbox and later to the file when saving.
+# * Changed the hight of the list boxes from 15 to 8 lines.
+# * Moved some stuff to the function 'clear_entry()', it was needed elsvere
+#   in the code to...
+# * Added the function 'rem_domain()'. Removes the currently choosen domain
+#   from the DNS database.
+#   Still can't figgure out how I should clear a menu, so that I can post new
+#   entries in it...
+# * Moved the 'Restart', 'Add' and 'Remove' buttons from the bottom of the
+#   window to above the 'Change' menubutton, makes the apparence look a little
+#   cleaner...
+#
+# Revision 1.7  1997/08/02 17:19:56  turbo
+# Changed the variable $CONFIG_DIR to contain '/etc/xadmin' instead
+#   of just '/etc'.
+#
+# Revision 1.6  1997/08/02 16:47:26  turbo
+# Added some 'if( $DEBUG )' to the printf's. Debug output only if DEBUG eq 1.
+#
+# Revision 1.5  1997/08/02 16:08:54  turbo
+# Moved the variable '$DEBUG' higher upp in the source code, and also shortened
+#   the line a little (so it could be changed with 'sed' easier).
+#
+# Revision 1.4  1997/04/26 21:38:27  turbo
+# Changed the default lib dir to '/usr/local/lib/maintainer' when not
+# debugging.
+#
+# Revision 1.3  1997/04/20 17:42:55  turbo
+# ./bin/xedit-users:
+#   * Moved part of the 'create leading dirs' to ./lib/xadmin.pl
+#   * Changed the default_dir_mode (rwxr-xr-x)
+#
+# ./bin/xedit-dns:
+#   * Changed the window/icon title when editing an entry
+#   * Removed the new_entry(), wasn't needed
+#   * Removed the rem_dns(), wasn't nedded
+#   * Added support for remove-entry
+#   * Saving to the 'real' database, instead of in '/tmp'
+#   * Fixed some buggs in reading/saving dns files
+#   * Started adding the saving of the boot file, incase of new domain
+#
+# Revision 1.2  1997/04/19 23:15:15  turbo
+# Added support for add/edit dns-entry
+# Added support for add dns-domain
+#
+# Revision 1.1  1997/04/07 23:40:19  turbo
+# Small changes in code to support 'DNS editor'...
+# Added the 'DNS editor' binary.
+#
+
+use Tk;
+use Tk::Dialog;
+use Tk::ErrorDialog;
+use File::Basename;
+use File::Find;
+
+# DEBUG = 0    =>   Ingen debugging, real actions
+# DEBUG = 1    =>   Virtual file system, debug output
+# DEBUG = 2    =>   Real actions, debug output
+$DEBUG  = 0;
+
+# Check if we have the variable XADMIN_DEBUG...
+if($ENV{'XADMIN_DEBUG'}) {
+    $DEBUG = $ENV{'XADMIN_DEBUG'}
+}
+
+# Zero these variables, so that pine stop complaining about them being 'used only once'...
+# They are used in '$defaults{lib_dir}/xadmin.pl'...
+$HOME        = "";
+$CONFIG_DIR  = "";
+$CONFIG_FILE = "";
+@FILES       = "";
+
+$CONFIG_DIR                      = '/etc/xadmin';
+$CONFIG_FILE                     = 'xedit-dns';
+
+# Some defaults...
+$defaults{win_font}              = "-*-Helvetica-Medium-R-Normal--*-140-*-*-*-*-*-*";
+if( $DEBUG == 1 ) {
+    # Debug defaults...
+    $defaults{domainname}        = "./etc/defaultdomain";
+    $defaults{dns_boot_file}     = "./etc/named.boot";
+    $defaults{lib_dir}           = "./lib";
+    $defaults{dns_dir}           = "./var/named";
+} else {
+    # Live defaults...
+    $defaults{domainname}        = "/etc/defaultdomain";
+    $defaults{dns_boot_file}     = "/etc/named.boot";
+    $defaults{lib_dir}           = "/usr/lib/xadmin";
+    $defaults{dns_dir}           = "/var/named";
+}
+
+$HOME = $ENV{'HOME'};
+$conf_checked = 0;
+
+# Are we running in a X enviroment?
+# (Check if we have a DISPLAY variable)
+if($ENV{'DISPLAY'}) {
+    # Load the utilities library...
+    require "$defaults{lib_dir}/xadmin.pl";
+#   $drop_down_icon = "$config{lib_dir}/dropdown.xbm";
+
+    # Check the config file...
+    if(! $conf_checked ) {
+	$conf_checked = 1;
+
+	%config = get_config(%defaults);
+    }
+
+    main_dns();
+    MainLoop;
+} else {
+    printf("Not running in a X enviroment...\n");
+    exit 1;
+}
+
+# ----------------------
+# proc main_dns( void )
+# This is the main routine...
+sub main_dns {
+    if(! Exists($main_dns_window) ) {
+	# Create the main window...
+	$main_dns_window = MainWindow->new();
+
+	# Configure the Main window...
+	$main_dns_window->title('XEdit-DNS');
+	$main_dns_window->iconname('xedit-dns');
+	$main_dns_window->ConfigSpecs(-resizeable => ['ACTIVE',undef,undef,1]);
+    }
+
+    # Create some vertical frames...
+    $top    = $main_dns_window->Frame(-relief => 'groove', -bd => 2);
+    $middle = $main_dns_window->Frame();
+    $bottom = $main_dns_window->Frame(-relief => 'groove', -bd => 2);
+    (@pl) = (-side   => 'top',
+	     -expand => 'yes',
+	     -padx   => 10,
+	     -pady   => 1,
+	     -fill   => 'both'
+    );
+    $top->pack(@pl, -expand => 'no');
+    $middle->pack(@pl);
+    $bottom->pack(@pl, -expand => 'no');
+
+    # -----------------------------------------------------------------
+
+    # Prepare the Input gadgets...
+    $main_inputs = $top->Frame;
+    @pl = (-side   => 'left',
+	   -expand => 'yes',
+	   -fill   => 'x',
+	   -padx   => '.5c',
+	   -pady   => '2'
+    );
+    $main_inputs->pack(@pl);
+
+    # --------
+
+    foreach $i (0, 1, 2, 3, 4, 5, 6) {
+	# Create the Input buttons...
+	$input_f{$i} = $main_inputs->Frame(-bd => 1);
+
+	$input_l{$i} = $input_f{$i}->Label();
+	$input_e{$i} = $input_f{$i}->Entry(-relief => 'sunken', -width => 40);
+
+	$input_f{$i}->pack(-side => 'top', -fill => 'x');
+	$input_e{$i}->pack(-side => 'right');
+	$input_l{$i}->pack(-side => 'left');
+    }
+
+    # Create the Input buttons...
+    $input_f{7} = $main_inputs->Frame(-bd => 1);
+    $input_l{7} = $input_f{7}->Label();
+    $input_e{7} = $input_f{7}->Entry(-relief => 'sunken', -width => 40);
+    $input_x{7} = $input_f{7}->Checkbutton(-text     => 'use rev',
+					   -variable => \$use_rev,
+					   -command  => sub{
+					       if( $use_rev && $domain ) {
+						   # Get the first word, and use that as filename...
+						   @temp     = split( '\.', $domain );
+
+						   # Uppercase the first word...
+						   $sub_dir  = uc( $temp[0] );
+
+						   $rev_file = "$dnsdir/$sub_dir/$temp[0].rev";
+					       } else {
+						   $rev_file = "";
+						   $use_rev  = 0;
+					       }
+    });
+    $input_f{7}->pack(-side => 'top', -fill => 'x');
+    $input_e{7}->pack(-side => 'right');
+    $input_x{7}->pack(-side => 'right');
+    $input_l{7}->pack(-side => 'left');
+
+    # Configure the Input gadgets...
+    $input_l{0}->configure( -text         => 'Domain:' );
+    $input_l{1}->configure( -text         => 'Network address:' );
+    $input_l{2}->configure( -text         => 'Name server:' );
+    $input_l{3}->configure( -text         => 'Mail exchanger:' );
+    $input_l{4}->configure( -text         => 'DNS maintainer:' );
+    $input_l{5}->configure( -text         => 'Info text:' );
+    $input_l{6}->configure( -text         => 'Database file:' );
+    $input_l{7}->configure( -text         => 'Reverse file:' );
+
+    $input_e{0}->configure( -textvariable => \$domain );
+    $input_e{1}->configure( -textvariable => \$network );
+    $input_e{2}->configure( -textvariable => \$ns );
+    $input_e{3}->configure( -textvariable => \$mx );
+    $input_e{4}->configure( -textvariable => \$maintainer );
+    $input_e{5}->configure( -textvariable => \$info_txt );
+    $input_e{6}->configure( -textvariable => \$db_file );
+    $input_e{7}->configure( -textvariable => \$rev_file );
+
+    # Bind the Input gadgets...
+    $input_e{0}->bind('<Return>' => sub{
+	# Create an error dialog just in case...
+	$dialog = $main_dns_window->Dialog(-bitmap         => 'error',
+					   -default_button => 'Oooppps'
+	);
+
+	# First cycle trough the primary zones, and make sure this domain doesn't exists...
+	for( $i = 0; $i < ($primary_domains - 1); $i++ ) {
+	    if( $domain ) {
+		if( $domain eq $dns_primary_zone{$i} ) {
+		    $new_domain = 0;
+		    $domain     = "";
+
+		    $dialog->configure(-text => 'You specified a domain name that already exist in your DNS...');
+		    $dialog->Show;
+
+		    # Focus on the first Input gadget again...
+		    $input_e{0}->focus;
+
+		    return;
+		}
+	    }
+	}
+
+	# Now cycle trough the secondary zones, and make sure this domain doesn't exists...
+	for( $i = 0; $i < ($secondary_domains - 1); $i++ ) {
+	    if( $domain ) {
+		if( $domain eq $dns_secondary_zone{$i} ) {
+		    $new_domain = 0;
+		    $domain     = "";
+
+		    $dialog->configure(-text => 'You specified a domain name that already exist in your DNS...');
+		    $dialog->Show;
+
+		    # Focus on the first Input gadget again...
+		    $input_e{0}->focus;
+
+		    return;
+		}
+	    }
+	}
+
+	# Do we still have a new domain?
+	if( $new_secondary ) {
+	    # Get the first word, and use that as sub-dir...
+	    @temp1   = split( '\.', $dns_domain );
+	    @temp2   = split( '\.', $domain );
+
+	    # Uppercase the first word...
+	    $sub_dir = uc( $temp1[0] );
+
+	    # Put together the path...
+	    $db_file  = "$dnsdir/$sub_dir/$temp2[0].zone";
+
+	    # Should we have a reverse file?
+	    if( $use_rev ) {
+		$rev_file = "$dnsdir/$sub_dir/$temp2[0].rev";
+	    }
+
+	    $maintainer = "root\@$domain";
+	} else {
+	    # Get the first word, and use that as sub-dir...
+	    @temp    = split( '\.', $domain );
+
+	    # Uppercase the first word...
+	    $sub_dir = uc( $temp[0] );
+
+	    # Put together the path...
+	    $db_file  = "$dnsdir/$sub_dir/$temp[0].zone";
+
+	    # Should we have a reverse file?
+	    if( $use_rev ) {
+		$rev_file = "$dnsdir/$sub_dir/$temp[0].rev";
+	    }
+
+	    $mx = "mail.$domain";
+	    $ns = "ns.$domain";
+	    $maintainer = "root\@$domain";
+	}
+
+	if( $new_secondary ) {
+	    $input_e{5}->focus;
+	} else {
+	    $input_e{1}->focus;
+	}
+    });
+    $input_e{1}->bind('<Return>' => sub{
+	@temp1 = split('\.', $network);
+
+	# Make sure all the real entries is on this network...
+	for( $i = 0; $i < $real_entries; $i++ ) {
+	    if( $real_entry{$i} ) {
+		@temp2 = split('\.', $real_entry{$i});
+		@temp3 = split(':',  $real_entry{$i});
+
+		if( $temp2[3] eq 'x' ) {
+		    $real_entry{$i} = "ns:$temp1[0].$temp1[1].$temp1[2].1";
+		} else {
+		    $real_entry{$i} = "$temp3[0]:$temp1[0].$temp1[1].$temp1[2].$temp2[3]";
+		}
+	    }
+	}
+
+	# Change the reverse variable...
+	for( $i = 0; $i < $primary_domains; $i++ ) {
+	    if( $dns_primary_zone{$i} ) {
+		# Change the reverse entry...
+		if( $dns_primary_zone{$i} =~ /$domain/ ) {
+		    @temp    = split('\.', $network);
+
+		    if(! $temp[2] == 0 ) {
+			$dns_primary_reverse{$i} = "$temp[2].$temp[1].$temp[0].in-addr.arpa";
+		    } else {
+			if(! $temp[1] == 0 ) {
+			    $dns_primary_reverse{$i} = "$temp[1].$temp[0].in-addr.arpa";
+			} else {
+			    $dns_primary_reverse{$i} = "$temp[0].in-addr.arpa";
+			}
+		    }
+		}
+	    }
+	}
+
+	# Reload listbox...
+	listbox_dns($dns_listbox_1, 'real');
+
+	$input_e{5}->focus
+    });
+    $input_e{2}->bind('<Return>' => sub{$input_e{3}->focus});
+    $input_e{3}->bind('<Return>' => sub{$input_e{4}->focus});
+    $input_e{4}->bind('<Return>' => sub{$input_e{5}->focus});
+    $input_e{5}->bind('<Return>' => sub{$input_e{0}->focus});
+    $input_e{6}->bind('<Return>' => sub{$input_e{0}->focus});
+    $input_e{7}->bind('<Return>' => sub{$input_e{0}->focus});
+
+    get_boot();
+
+    # --------
+
+    # Create the Main menu...
+    main_menu($top);
+
+    # -----------------------------------------------------------------
+
+    # Prepare the Listboxes...
+    $left  = $middle->Frame;
+    $right = $middle->Frame;
+    (@pl) = (-side   => 'left',
+	     -expand => 'yes',
+	     -padx   => 0,
+	     -pady   => 1,
+	     -fill   => 'both'
+    );
+    $left->pack(@pl);
+    $right->pack(@pl);
+
+    # --------
+
+    # Print out the left header...
+    $left->Label(-text => 'Real entries')->pack(-side => 'top', -fill => 'x', -anchor => 'n');
+
+    # Create the list view...
+    $dns_listbox_1 = $left->Listbox(-setgrid  => 1,
+				    -height   => 8,
+				    -font     => 'fixed'
+    );
+    $yscroll_1 = $left->Scrollbar(-command    => [$dns_listbox_1 => 'yview'], -orient => 'vertical');
+    $yscroll_1->pack(-side => 'right',  -fill => 'y');
+
+    $xscroll_1 = $left->Scrollbar(-command    => [$dns_listbox_1 => 'xview'], -orient => 'horizontal');
+    $xscroll_1->pack(-side => 'bottom', -fill => 'x');
+
+    $dns_listbox_1->configure(-yscrollcommand => [$yscroll_1 => 'set'], -xscrollcommand => [$xscroll_1 => 'set']);
+    $dns_listbox_1->pack(-expand => 'yes', -fill => 'both');
+    $dns_listbox_1->bind('<Double-Button-1>'  => sub{edit_entry($dns_listbox_1, 'edit', 'real')});
+
+    # --------
+
+    # Print out the right header...
+    $right->Label(-text => 'Alias entries')->pack(-side => 'top', -fill => 'x', -anchor => 'n');
+
+    # Create the list view...
+    $dns_listbox_2 = $right->Listbox(-setgrid => 1,
+				     -height  => 8,
+				     -font    => 'fixed'
+    );
+    $yscroll_2 = $right->Scrollbar(-command   => [$dns_listbox_2 => 'yview'], -orient => 'vertical');
+    $yscroll_2->pack(-side => 'right', -fill  => 'y');
+
+    $xscroll_2 = $right->Scrollbar(-command   => [$dns_listbox_2 => 'xview'], -orient => 'horizontal');
+    $xscroll_2->pack(-side => 'bottom', -fill => 'x');
+
+    $dns_listbox_2->configure(-yscrollcommand => [$yscroll_2 => 'set'], -xscrollcommand => [$xscroll_2 => 'set']);
+    $dns_listbox_2->pack(-expand => 'yes', -fill => 'both');
+    $dns_listbox_2->bind('<Double-Button-1>'  => sub{edit_entry($dns_listbox_2, 'edit', 'alias')});
+
+    # -----------------------------------------------------------------
+
+    # Read in the dns file, if we have any domains...
+    if( $primary_domains || $secondary_domains ) {
+	do_listbox( $domain_number, 'primary' );
+    } else {
+	$dnsdir = $config{dns_dir};
+	printf("No domains what so ever, starting from scratch...\n");
+	add_domain('prim');
+    }
+
+    # Create the Main buttons...
+    main_buttons( $bottom, 'dns' );
+}
+
+# ----------------------
+# proc edit_entry( listbox, command, type )
+# Edit the DNS database
+sub edit_entry {
+    # listbox - In what listbox should we put the entry?
+    # command - What to do
+    #           edit
+    #           add
+    # type    - What type to add/edit
+    #           real
+    #           alias
+    local($listbox, $command, $type) = @_;
+
+    printf("Calling edit_entry($listbox, $command, $type)...\n") if( $DEBUG );
+
+    # Zero out these variables... They are only temporary...
+    $source      = "";
+    $destination = "";
+
+    if( $command eq 'edit' ) {
+	# Get the whole line...
+	$entry_number = $listbox->index('active');
+    }
+
+    # Create the window...
+    if(! Exists($dns_edit_window) ) {
+	$dns_edit_window = $main_dns_window->Toplevel;
+
+	if( $command eq 'edit' ) {
+	    if( $type eq 'real' ) {
+		# Configure the Edit window...
+		$dns_edit_window->title('Edit-Real');
+		$dns_edit_window->iconname('edit-real');
+
+		# Create the Main buttons...
+		main_buttons($dns_edit_window, 'dns_edit_real');
+	    } elsif( $type eq 'alias' ) {
+		# Configure the Edit window...
+		$dns_edit_window->title('Edit-Alias');
+		$dns_edit_window->iconname('edit-alias');
+
+		# Create the Main buttons...
+		main_buttons($dns_edit_window, 'dns_edit_alias');
+	    }
+	} elsif( $command eq 'add' ) {
+	    if( $type eq 'real' ) {
+		# Configure the Edit window...
+		$dns_edit_window->title('Add-Real');
+		$dns_edit_window->iconname('add-real');
+
+		# Create the Main buttons...
+		main_buttons($dns_edit_window, 'dns_add_real');
+	    } elsif( $type eq 'alias' ) {
+		# Configure the Edit window...
+		$dns_edit_window->title('Add-Alias');
+		$dns_edit_window->iconname('add-alias');
+
+		# Create the Main buttons...
+		main_buttons($dns_edit_window, 'dns_add_alias');
+	    }
+	}
+
+	foreach $i (0, 1) {
+	    # Create the Input buttons...
+	    $edit_input_f{$i} = $dns_edit_window->Frame(-bd => 1);
+
+	    $edit_input_l{$i} = $edit_input_f{$i}->Label();
+	    $edit_input_e{$i} = $edit_input_f{$i}->Entry(-relief => 'sunken', -width => 20);
+
+	    $edit_input_f{$i}->pack(-side => 'top', -fill => 'x');
+	    $edit_input_e{$i}->pack(-side => 'right');
+	    $edit_input_l{$i}->pack(-side => 'left');
+	}
+
+	# Configure the Input gadgets...
+	$edit_input_l{0}->configure(     -text     => 'Hostname:'    );
+	if( $type eq 'real' ) {
+	    $edit_input_l{1}->configure( -text     => 'IP address:'  );
+	} elsif( $type eq 'alias' ) {
+	    $edit_input_l{1}->configure( -text     => 'Point to:'    );
+	}
+	$edit_input_e{0}->configure( -textvariable => \$source       );
+	$edit_input_e{1}->configure( -textvariable => \$destination  );
+
+	# Bind the Input gadgets...
+	$edit_input_e{0}->bind('<Return>' => sub{$edit_input_e{1}->focus});
+	$edit_input_e{1}->bind('<Return>' => sub{$edit_input_e{0}->focus});
+    } else {
+	$dns_edit_window->focus;
+    }
+
+    if( $command eq 'edit' ) {
+	if( $type eq 'real' ) {
+	    @line = split(':', $real_entry{$entry_number});
+	} elsif( $type eq 'alias' ) {
+	    @line = split(':', $alias_entry{$entry_number});
+	}
+
+	$source      = $line[0];
+	$destination = $line[1];
+    }
+
+    # Focus on the first Input gadget...
+    $edit_input_e{0}->focus;
+}
+
+# ----------------------
+# proc clear_entry( void )
+# Clear the current domain database
+sub clear_entry {
+    printf("Calling clear_entry(void)...\n") if( $DEBUG );
+    
+    # Clear all the variables...
+    $domain     = "";    $reverse    = "";
+    $network    = "";    $mx         = "";
+    $ns         = "";    $maintainer = "";
+    $info_txt   = "";    $db_file    = "";
+    $rev_file   = "";    $refresh    = "";
+    $retry      = "";    $expire     = "";
+    $def_ttl    = "";    $use_rev    = 0;
+
+    # Clear the real entries...
+    for( $i = 0; $i < $real_entries; $i++ ) {
+	$real_entry{$i}  = "";
+	$real_entries    = 0;
+    }
+    $real_entries   = 0;
+
+    # Clear the alias entries...
+    %alias_entry   = ();
+    $alias_entries = 0;
+
+    # Clear the listboxes...
+    $dns_listbox_1->delete(0, 'end');
+    $dns_listbox_2->delete(0, 'end');
+}
+
+# ----------------------
+# proc add_domain( type )
+# Add a domain to the DNS database
+sub add_domain {
+    # type - What kind of domain is this?
+    #        prim/sec
+    local($type) = @_;
+
+    printf("Calling add_domain($type)...\n") if( $DEBUG );
+
+    # This is a new domain...
+    $new_domain    = 1;
+    $real_entries  = 0;
+    $alias_entries = 0;
+
+    # Add one to the total domains...
+    $domain_number++;
+
+    if( $type eq 'sec' ) {
+	$secondary_domains++;
+	$new_secondary = 1;
+	$new_primary   = 0;
+	$use_rev       = 0;
+    } else {
+	$primary_domains++;
+	$new_secondary = 0;
+	$new_primary   = 1;
+	$use_rev       = 1;
+    }
+
+    printf("  Domain number:     $domain_number\n")     if( $DEBUG );
+    printf("  Primary domains:   $primary_domains\n")   if( $DEBUG );
+    printf("  Secondary domains: $secondary_domains\n") if( $DEBUG );
+
+    # Detault system data variables...
+    $refresh{$domain_number} = 604800;
+    $retry{$domain_number}   = 86400;
+    $expire{$domain_number}  = 2419200;
+    $def_ttl{$domain_number} = 604800;
+    $mx_pref                 = 10;
+
+    # Create a serial number...
+    create_serial(0);
+
+    # Clear the current domain database
+    clear_entry();
+
+    if( $type eq 'sec' ) {
+	# Since this is a secondary domain, give some more defaults...
+	@temp = split('\.', $ns_ip);
+
+	$network       = "$temp[0].$temp[1].$temp[2].0";
+	$ns            = $ns_ip;
+	$mx            = $mailexchanger;
+
+	$real_entry{0} = "ns:$ns_ip";
+
+	# Make sure the 'use rev' checkbutton is disabled...
+	$input_x{7}->configure(-state => 'disabled');
+    }
+
+    # Now.. Try to create some 'default' real entries (ns)...
+    if( $type ne 'sec' ) {
+	$real_entry{0} = "ns:x.x.x.x";
+    }
+    $real_entries  = 1;
+
+    # Insert the 'real' dns enties in the first listbox...
+    listbox_dns($dns_listbox_1, 'real');
+
+    # Now... Some default aliases (www, ftp, mail, news, telnet all pointing to ns)...
+    $alias_entry{0} = "www:ns";
+    $alias_entry{1} = "ftp:ns";
+    $alias_entry{2} = "mail:ns";
+    $alias_entry{3} = "news:ns";
+    $alias_entry{4} = "telnet:ns";
+    $alias_entries  = 5;
+
+    # Insert the 'alias' dns enties in the second listbox...
+    listbox_dns($dns_listbox_2, 'alias');
+
+    if( $type eq 'sec' ) {
+	# Deactivate the reverse input gadget...
+	$use_rev = 0;
+    } else {
+	# Activate the reverse input gadget...
+	$use_rev = 1;
+    }
+
+    # Focus on the first Input gadget...
+    $input_e{0}->focus;
+}
+
+# ----------------------
+# proc rem_domain( void )
+# Remove a domain from the DNS database
+sub rem_domain {
+    my($i, $domain_number, $found_primary, $rm_file, $rm_dir);
+
+    printf("Calling rem_domain(void)...\n") if( $DEBUG );
+
+    if(! $domain ) {
+	$dialog = $window->Dialog(-bitmap         => 'error',
+				  -default_button => 'Oooppps'
+	);
+	$dialog->configure(-text => 'No domain to remove...')->Show;
+	return( 1 );
+    }
+
+    printf("  Domain: $domain\n") if( $DEBUG );
+
+    # This is soon to be a old domain...
+    $old_domain    = 1;
+    $found_primary = 0;
+
+    # First we have to find out what domain we are looking at...
+    $i = 0;
+    while( $dns_primary_zone{$i} ) {
+	if( $dns_primary_zone{$i} eq $domain ) {
+	    $domain_number = $i;
+	    $found_primary = 1;
+	}
+
+	$i++;
+    }
+
+    if(! $found_primary ) {
+	$i = 0;
+	while( $dns_secondary_zone{$i} ) {
+	    if( $dns_secondary_zone{$i} eq $domain ) {
+		$domain_number = $i;
+		$found_primary = 2;
+	    }
+
+	    $i++;
+	}
+    }
+
+    # Now, before the variable is deleted, find the directory relative
+    # to the DNS dir, and remove the files/directories in the filesystem...
+    if( $found_primary == 1 ) {
+	# This is a PRIMARY domain...
+
+	$rm_file = $dns_primary_zone_file{$domain_number};
+    } elsif( $found_primary == 2 ) {
+	# This is a SECONDARY domain...
+
+	$rm_file = $dns_secondary_zone_file{$domain_number};
+    }
+
+    # Remove the last part, which is the file name...
+    if( $found_primary == 1 ) {
+	# This is a primary domain, remove the whole directory...
+
+	$rm_dir = dirname( $rm_file );
+	printf("  Dir:    $rm_dir\n");
+
+	if( -d "$dnsdir/$rm_dir" ) {
+	    find(\&wanted, "$dnsdir/$rm_dir");
+	    foreach $file (@FILES) {
+		$source = "$dnsdir/$rm_dir/$file";
+
+		# Is it a file or directory?
+		if( -d $source ) {
+		    # Dir...
+		    if(! rmdir($source) ) {
+			printf("ERROR: Could not delete $source, $!");
+		    } else {
+			printf("  Deleted dir  '$source'\n") if( $DEBUG );
+		    }
+		} else {
+		    # File...
+		    unlink($source);
+		    printf("  Deleted file '$source'\n") if( $DEBUG );
+		}
+	    }
+
+	    if(! rmdir("$dnsdir/$rm_dir") ) {
+		printf("ERROR: Could not delete $dnsdir/$rm_dir, $!");
+	    } else {
+		printf("  Deleted dir  '$dnsdir/$rm_dir'\n") if( $DEBUG );
+	    }
+	}
+    } else {
+	# This is a secondary domain, remove only the file...
+	printf("  File:   $rm_file\n");
+	if( unlink("$dnsdir/$rm_file") ) {
+	    printf("  Deleted file '$rm_file'\n");
+	}
+    }
+
+    # And last, delete all the global variables about this domain...
+    if( $found_primary == 1 ) {
+	printf("  Found a primary domain( $domain_number )\n");
+
+	for( $i = $domain_number; $i < $primary_domains; $i++ ) {
+	    if( $dns_primary_zone{$i + 1} ) {
+		$dns_primary_zone{$i}      = $dns_primary_zone{$i + 1};
+		$dns_primary_zone_file{$i} = $dns_primary_zone_file{$i + 1};
+	    }
+	}
+
+	$primary_domains--;
+
+	$dns_primary_zone{$primary_domains}      = "";
+	$dns_primary_zone_file{$primary_domains} = "";
+    } elsif( $found_primary == 2 ) {
+	printf("  Found a secondary domain( $domain_number )\n");
+
+	for( $i = $domain_number; $i < $secondary_domains; $i++ ) {
+	    if( $dns_secondary_zone{$i + 1} ) {
+		$dns_secondary_zone{$i}      = $dns_secondary_zone{$i + 1};
+		$dns_secondary_zone_file{$i} = $dns_secondary_zone_file{$i + 1};
+	    }
+	}
+
+	$secondary_domains--;
+
+	$dns_secondary_zone{$secondary_domains}      = "";
+	$dns_secondary_zone_file{$secondary_domains} = "";
+    } else {
+	printf("  ERROR: Domain not found, what the hell are we looking at here...\n");
+    }
+
+    # Clear the current domain database
+    clear_entry();
+
+    # Then resave the DNS files...
+    save_dns();
+
+    # Find and remove the menu...
+    $menu = $menu1->cget('-menu');
+    $menu->Unpost($menu1);
+
+    # Create the menu entries (PRIMARY domains)...
+    # -----------------------
+    for( $i = 0; $i < $primary_domains; $i++ ) {
+	$entry{$i}       = $dns_primary_zone{$i};
+	$menu1->command(-label => "$i. $entry{$i}", -command => sub{
+	    # Find the menu...
+	    $menu = $menu1->cget('-menu');
+
+	    # Find the sub menu entry...
+	    $domain_number = $menu->index('active') - 1;
+
+	    # Make sure we know it's a primary domain...
+	    $domain_type = 'primary';
+
+	    # Read in and populate the listboxes...
+	    do_listbox( $domain_number, 'primary' );
+	});
+    }
+
+    # Create the menu entries (SECONDARY domains)...
+    # -----------------------
+    for( $j = 0; $j < $secondary_domains; $j++ ) {
+	$entry{$i}       = $dns_secondary_zone{$j};
+	$menu1->command(-label => "$i. $entry{$i}", -command => sub{
+	    # Find the menu...
+	    $menu = $menu1->cget('-menu');
+
+	    # Find the sub menu entry...
+	    $domain_number = $menu->index('active') - $primary_domains - 1;
+
+	    # Deactivate the reverse input gadget...
+	    $input_e{7}->configure(-state => 'disabled');
+
+	    # Make sure it's a primary domain...
+	    $domain_type = 'primary';
+
+	    # Read in and populate the listboxes...
+	    do_listbox( $domain_number, 'secondary' );
+	});
+	$i++;
+    }
+    $menu1->pack(-side => 'bottom');
+}
+
+# ----------------------
+# proc get_boot( void )
+# Get the named boot options
+sub get_boot {
+    my(@line, $i, $j, $tmp);
+
+    printf("Calling get_boot(void)...\n") if( $DEBUG );
+
+    # Cycle through the group entries...
+    $primary_domains   = 0;
+    $secondary_domains = 0;
+    $entry = "";
+    do {
+	# First open nameserver boot file...
+	if(! open( DNS_BOOT, $config{dns_boot_file} ) ) {
+	    printf("  WARNING: Could not open $config{dns_boot_file}!!!\n") if( $DEBUG );
+	    printf("    Using defaults...\n") if( $DEBUG );
+
+	    $dnsdir = $config{dns_dir};
+	    $secondary_domains = 0;
+	    $dns_cache = "root.cache";
+
+	    return( 1 );
+	}
+
+	# Read the file...
+	while(! eof(DNS_BOOT) ) {
+	    $tmp = <DNS_BOOT>;
+
+	    # Skip comments and empty lines...
+	    next if( $tmp =~ /^;/ );
+	    next if( $tmp =~ /^$/ );
+
+	    # Save the line...
+	    @line = split(' ', $tmp);
+
+	    # Find the DNS directory...
+	    if( $line[0] ) {
+		if( $line[0] =~ /^directory/ ) {
+		    $dnsdir = $line[1];
+		    printf("  DNS Dir:  $dnsdir\n") if( $DEBUG );
+		}
+
+		if( $line[0] =~ /^cache/ ) {
+		    $dns_cache = $line[2];
+		    printf("  DNS Cache: $dns_cache\n") if( $DEBUG );
+		}
+
+		if( $line[0] =~ /^primary/ ) {
+		    # We found a primary domain...
+
+		    # Get the files...
+		    if( $line[1] =~ /in-addr.arpa/ ) {
+			# Reverse
+			$dns_primary_reverse{$primary_domains}      = $line[1];
+			$dns_primary_reverse_file{$primary_domains} = $line[2];
+
+			if( $DEBUG ) {
+			    printf("      Rev:  $dns_primary_reverse{$primary_domains}\n");
+			    printf("      File: $dnsdir/$dns_primary_reverse_file{$primary_domains}\n");
+			}
+		    } else {
+			# Zone
+			$dns_primary_zone{$primary_domains}         = $line[1];
+			$dns_primary_zone_file{$primary_domains}    = $line[2];
+
+			$domain = $dns_primary_zone{$primary_domains};
+
+			# This is the main domain...
+			$domain_number = $primary_domains;
+
+			if( $DEBUG ) {
+			    printf("  ($primary_domains) Zone: $dns_primary_zone{$primary_domains}\n");
+			    printf("      File: $dnsdir/$dns_primary_zone_file{$primary_domains}\n");
+			}
+
+			# Count up one domain... 
+			$primary_domains++;
+		    }
+		}
+
+		if( $line[0] =~ /^secondary/ ) {
+		    # We found a secondary domain...
+
+		    if( $line[1] =~ /in-addr.arpa/ ) {
+			# Bah, reverse...
+			$dns_secondary_reverse{$secondary_domains}      = $line[1];
+			$dns_secondary_reverse_file{$secondary_domains} = $line[2];
+
+			printf("      Rev:  $dns_secondary_reverse{$j}\n") if( $DEBUG );
+			printf("      File: $dnsdir/$dns_secondary_reverse_file{$j}\n") if( $DEBUG );
+		    } else {
+			# We found a secondary domain...
+			$dns_secondary_zone{$secondary_domains}       = $line[1];
+			$dns_secondary_zone_file{$secondary_domains}  = $line[2];
+
+			if( $DEBUG ) {
+			    printf("  ($secondary_domains) Zone:  $dns_secondary_zone{$secondary_domains}\n");
+			    printf("      File:  $dnsdir/$dns_secondary_zone_file{$secondary_domains}\n");
+			}
+
+			# Count up one domain... 
+			$secondary_domains++;
+		    }
+		}
+	    }
+	}
+
+	$domains = $primary_domains + $secondary_domains;
+
+	if( $DEBUG ) {
+	    printf("  Primary domains:   $primary_domains\n");
+	    printf("  Secondary domains: $secondary_domains\n");
+	}
+
+	# Close the boot file...
+	close( DNS_BOOT );
+    }
+}
+
+# ----------------------
+# proc listbox_dns( listbox, type )
+# Fill the list box with entries
+sub listbox_dns {
+    # listbox - In what lisbox should we insert
+    # type    - What kind of entry
+    #           real
+    #           alias
+    local($listbox, $type) = @_;
+    my(@temp);
+    printf("Calling listbox_dns( $listbox, $type )...\n") if( $DEBUG );
+
+    # Clear the content in the text widget...
+    $listbox->delete(0, 'end');
+
+    if(  $type eq 'real' ) {
+	for( $i = 0; $i < $real_entries; $i++ ) {
+	    if( $real_entry{$i} ) {
+		@temp   = split(':', $real_entry{$i});
+
+		$entry  = size_string( 'right', $temp[0], 24 );
+		$entry .= size_string( 'right', $temp[1], 24 );
+
+		$listbox->insert( 'end', $entry );
+	    }
+	}
+    } elsif( $type eq 'alias' ) {
+	for( $i = 0; $i < $alias_entries; $i++ ) {
+	    if( $alias_entry{$i} ) {
+		@temp   = split(':', $alias_entry{$i});
+
+		$entry  = size_string( 'right', $temp[0], 24 );
+		$entry .= size_string( 'right', $temp[1], 24 );
+
+		$listbox->insert( 'end', $entry );
+	    }
+	}
+    }
+}
+
+# ----------------------
+# proc hupp_named( void )
+# Find and send SIGHUP to named
+sub hupp_named {
+    my(@proc, $line);
+
+    # Open command ps...
+    open( PS, "/bin/ps axw|" ) || die "Cannot open /bin/ps...\n";
+    while(! eof(PS) ) {
+	$line = <PS>;
+
+	next if( $line =! /named/ );
+
+	@proc = split(' ', $line);
+
+	$cnt = kill( 1, $proc[0] );
+	if( $cnt == 0 ) {
+	    # Could not HUP...
+	    printf("ERROR: Could not send SIGHUP to $proc[4]\n");
+	} else {
+	    # Could HUP...
+	    printf("  Send SIGHUP to $proc[4]\n") if( $DEBUG );
+	}
+    }
+    close( PS );
+}
+
+# ----------------------
+# proc main_menu( window )
+# Create the main menu, so that we can add the sub-menus...
+sub main_menu {
+    # window - In what window to put the menu...
+    local($window) = @_;
+
+    printf("Calling main_menu($window)...\n") if( $DEBUG );
+
+    # Create the menu frame...
+    $menu_frame = $window->Frame(-borderwidth => 2);
+    $menu_frame->pack(-fill => 'x');
+
+    # Create the 'Config' menu...
+    $menu1 = $menu_frame->Menubutton(-width => 8, -text => 'List', -underline => 1, -relief => 'raised');
+
+    if( $primary_domains || $secondary_domains ) {
+	# Create the menu entries (PRIMARY domains)...
+	# -----------------------
+	for( $i = 0; $i < $primary_domains; $i++ ) {
+	    $entry{$i}       = $dns_primary_zone{$i};
+	    $menu1->command(-label => "$i. $entry{$i}", -command => sub{
+		# Find the menu...
+		$menu = $menu1->cget('-menu');
+
+		# Find the sub menu entry...
+		$domain_number = $menu->index('active') - 1;
+
+		# Make sure we know it's a primary domain...
+		$domain_type = 'primary';
+
+		# Read in and populate the listboxes...
+		do_listbox( $domain_number, 'primary' );
+	    });
+	}
+
+	# Create the menu entries (SECONDARY domains)...
+	# -----------------------
+	for( $j = 0; $j < $secondary_domains; $j++ ) {
+	    $entry{$i}       = $dns_secondary_zone{$j};
+	    $menu1->command(-label => "$i. $entry{$i}", -command => sub{
+		# Find the menu...
+		$menu = $menu1->cget('-menu');
+
+		# Find the sub menu entry...
+		$domain_number = $menu->index('active') - $primary_domains - 1;
+
+		# Deactivate the reverse input gadget...
+		$input_e{7}->configure(-state => 'disabled');
+
+		# Make sure it's a primary domain...
+		$domain_type = 'primary';
+
+		# Read in and populate the listboxes...
+		do_listbox( $domain_number, 'secondary' );
+	    });
+	    $i++;
+	}
+    } else {
+	# We don't have any domains, therefor we cannot change view...
+	$menu1->configure(-state => 'disabled');
+    }
+
+    # Pack the Menubutton and the menu...
+    $menu1->pack(-side => 'bottom');
+
+    # Some buttons and a label above the menu...
+    $menu_label = $menu_frame->Label();
+    $menu_label->pack(-side => 'top')->configure(-text => 'Domains:');
+
+    if( $DEBUG ) {
+	# If we are running in debug mode, make sure that we can not restart the name server...
+	$menu_frame->Button(-width => 7, -text => 'Restart', -command => \&hupp_named, -state => 'disabled')->pack(-side => 'top');
+    } else {
+	$menu_frame->Button(-width => 7, -text => 'Restart', -command => \&hupp_named)->pack(-side => 'top');
+    }
+    $menu_frame->Button(-width => 7, -text => 'Primary',   -underline => 4,
+			-command => sub{
+			    add_domain("prim");
+
+			    # Enable the 'New real' entry...
+			    $main_button_3->configure(-state => 'active');
+			})->pack(-side => 'top');
+    $menu_frame->Button(-width => 7, -text => 'Secondary', -underline => 4,
+			-command => sub{
+			    if( $ns_ip ) {
+				# Only do this if we have a primary...
+				add_domain("sec");
+
+				# Dissable the 'New real' entry...
+				$main_button_3->configure(-state => 'disabled');
+			    } else {
+				# Output a error dialog...
+				$main_dns_window->Dialog(-bitmap         => 'error',
+							 -default_button => 'Oooppps',
+							 -text           => "Can't have a secondary if we don't have a primary..."
+				)->Show;
+			    }
+			})->pack(-side => 'top');
+    $menu_frame->Button(-width => 7, -text => 'Remove',    -underline => 4,
+			-command => \&rem_domain)->pack(-side => 'top');
+    $menu_frame->Button(-width => 7, -text => 'Clear',     , -underline => 4,
+			-command => \&clear_entry)->pack(-side => 'top');
+}
+
+# ----------------------
+# proc read_dns_file( type, number, domain_type )
+# Read in the dns file
+sub read_dns_file {
+    # type        - What kind of entries
+    #               real
+    #               alias
+    # number      - Which domain?
+    # domain_type - What type of domain
+    #               primary
+    #               secondary
+    local($type, $number, $domain_type) = @_;
+    my(@line, @serial, @refresh, @retry, @expire, @def_ttl);
+    my($new_domain, $i, $j, $k, $tmp);
+
+    printf("Calling read_dns_file($type, $number, $domain_type)...\n") if( $DEBUG );
+
+    # This is not a new domain...
+    $new_domain = 0;
+
+    # Open the zone file...
+    if( $domain_type eq 'primary' ) {
+	$dns_domain = $dns_primary_zone{$number};
+	$dns_rev    = $dns_primary_reverse{$number};
+	$dns_file1  = $dns_primary_zone_file{$number};
+	$dns_file2  = $dns_primary_reverse_file{$number};
+	$use_rev    = 1;
+
+	open( DNS_ZONE, "$dnsdir/$dns_primary_zone_file{$number}" ) || die "Could not open '$dnsdir/$dns_primary_zone_file{$number}'.\n";
+    } elsif( $domain_type eq 'secondary' ) {
+	$dns_domain = $dns_secondary_zone{$number};
+	$dns_file1  = $dns_secondary_zone_file{$number};
+	$dns_file2  = "";
+	$dns_rev    = "";
+	$use_rev    = 0;
+
+	open( DNS_ZONE, "$dnsdir/$dns_secondary_zone_file{$number}" ) || die "Could not open '$dnsdir/$dns_secondary_zone_file{$number}'.\n";
+    }
+
+    # Erase these variables, before we use them...
+    %real_entry    = ();    $real_entries  = 0;
+    %alias_entry   = ();    $alias_entries = 0;
+
+    # Read the file...
+    $j = 0; $k = 0; $i = 0;
+    while(! eof(DNS_ZONE) ) {
+	$tmp = <DNS_ZONE>;
+	# Skip comments and empty lines...
+	next if( $tmp =~ /^;/ );
+	next if( $tmp =~ /^$/ );
+
+	# Save the line...
+	@line = split(' ', $tmp);
+
+	if( $line[1] ) {
+	    # Just incase the first or second word contains 'IN'...
+	    # Rearange the variable list...
+	    if( $line[0] eq 'IN' ) {
+		$i = 0;
+		while( $line[$i+1] ) {
+		    $line[$i] = $line[$i + 1];
+		    $i++;
+		}
+	    }
+	    if( $line[1] eq 'IN' ) {
+		$i = 1;
+		while( $line[$i+1] ) {
+		    $line[$i] = $line[$i + 1];
+		    $i++;
+		}
+	    }
+
+	    if( $type eq 'real' ) {
+		# Only get these once...
+		# ----------------------
+
+		# Get the maintainer...
+		if( $line[2] ) {
+		    if( $line[2] eq 'SOA' | $line[1] eq 'SOA' ) {
+			if( $line[2] eq 'SOA' ) {
+			    $maintainer{$number} = $line[4];
+			} elsif( $line[1] eq 'SOA' ) {
+			    $maintainer{$number} = $line[3];
+			}
+
+			# Check if we have a dot as last character...
+			if( $maintainer{$number} =~ /\.$/ ) {
+			    # Remove the last dot...
+			    $maintainer{$number}  =~ s/\.$//;
+			} else {
+			    # Add the domain to the end of the maintainer...
+			    $maintainer{$number} .=  ".$dns_domain";
+			}
+
+			# Check if there is one word in there...
+			$maintainer{$number} = single_word( '\.', $maintainer{$number}, "\@$dns_domain" );
+
+			# Change first dot (.) to a at (@)...
+			$maintainer{$number} =~ s/\./@/;
+
+			printf("  Maintainer: $maintainer{$number}\n") if( $DEBUG );
+
+			# Now... Try to find the NS system data...
+			@serial  = split(' ', <DNS_ZONE>);
+			@refresh = split(' ', <DNS_ZONE>);
+			@retry   = split(' ', <DNS_ZONE>);
+			@expire  = split(' ', <DNS_ZONE>);
+			@def_ttl = split(' ', <DNS_ZONE>);
+
+			$serial{$number}         = $serial[0];
+			$refresh{$number}        = $refresh[0];
+			$retry{$domain_number}   = $retry[0];
+			$expire{$domain_number}  = $expire[0];
+			$def_ttl{$domain_number} = $def_ttl[0];
+
+			if( $DEBUG ) {
+			    printf("  System data (Domain no: $number/$domains)\n");
+			    printf("    Serial:   $serial{$number}\n");
+			    printf("    Refresh:  $refresh{$number}\n");
+			    printf("    Retry:    $retry{$domain_number}\n");
+			    printf("    Expire:   $expire{$domain_number}\n");
+			    printf("    TTL:      $def_ttl{$domain_number}\n");
+			}
+		    }
+		}
+
+		# Get the NS...
+		if( $line[1] eq 'NS' | $line[0] eq 'NS' ) {
+		    if( $line[1] eq 'NS' ) {
+			# Probably DNS in local domain...
+			$ns{$number}  = $line[2];
+
+			if( $ns{$number} !~ /$dns_domain/ ) {
+			    # Just make sure we DO have a dot as last char...
+			    if( $ns{$number} !~ /\.$/ ) {
+				# Add domainname to dns name...
+				$ns{$number} .= ".$dns_domain.";
+			    }
+			}
+		    } elsif( $line[0] eq 'NS' ) {
+			# DNS exists in another domain (No @ in first column)...
+			$ns{$number} = $line[1];
+		    }
+
+		    # Check if this is an IP address or a hostname...
+		    if( $ns{$number} =~ /^[0-9]*$/ ) {
+			$ns_number{$number} = 1;
+			printf("  NS is IP?   Yes\n") if( $DEBUG );
+		    } else {
+			$ns_number{$number} = 0;
+			printf("  NS is IP?   No\n") if( $DEBUG );
+		    }
+		    $nameserver = $ns{$number};
+
+		    printf("  NS:         $ns{$number}\n") if( $DEBUG );
+		}
+
+		# Get the MX...
+		if( $line[1] eq 'MX' | $line[0] eq 'MX' ) {
+		    if( $line[1] eq 'MX' ) {
+			# MX in local domain...
+			$mx_pref{$number} = $line[2];
+			$mx{$number}      = $line[3];
+
+			if( $mx{$number} !~ /$dns_domain/ ) {
+			    # Just make sure we do not have a dot as last char...
+			    if( $mx{$number} !~ /\.$/ ) {
+				# Add domainname to mx name...
+				$mx{$number} .= ".$dns_domain";
+			    }
+			}
+		    } elsif( $line[0] eq 'MX' ) {
+			# MX exist in another domain (No @ in first column)...
+			$mx_pref{$number} = $line[1];
+			$mx{$number}      = $line[2];
+		    }
+
+		    # Remove the last dot (.)...
+		    $mx{$number}   =~ s/\.$//;
+		    $mailexchanger = $mx{$number};
+
+		    printf("  MX:         $mx{$number}\n") if( $DEBUG );
+		}
+
+		# Get the info text...
+		if( $line[1] eq 'TXT' | $line[0] eq 'TXT' ) {
+		    $temp_line = "@line";
+		    $temp      = index($temp_line, "\"");
+
+		    $info_txt{$number} = substr($temp_line, $temp);
+
+		    # Remove the " from the info text variable...
+		    $info_txt{$number} =~ s/\"//g;
+
+		    printf("  Info txt:   $info_txt{$number}\n") if( $DEBUG );
+		}
+	    }
+
+	    if( $line[1] eq 'A' || $line[1] eq 'CNAME' ) {
+		# Get the first and second name...
+		$first  = $line[0];
+		$second = $line[2];
+
+		# Save it i its proper place...
+		if( $line[1] eq "A" ) {
+		    if(! $ns_number{$number} && $type eq 'real' ) {
+			# Only try to find the nameservers IP if scanning for real hosts...
+			@temp = split('\.', $ns{$number});
+
+			# The NS is a hostname, see if this is the nameserver...
+			if( $temp[0] eq $first ) {
+			    $ns_ip = $second;
+			    printf("  Nameserver: $ns_ip\n") if( $DEBUG );
+			}
+		    }
+
+		    # It's a A record...
+		    $real_entry{$k} = "$first:$second";
+
+		    if( $type eq 'real' ) {
+			printf("  Real (%3d):    %s\n", $k, $real_entry{$k}) if( $DEBUG );
+		    }
+
+		    $k++;
+		} elsif( $line[1] eq 'CNAME' ) {
+		    # It's a CNAME record...
+		    $alias_entry{$j} = "$first:$second";
+
+		    if( $type eq 'alias' ) {
+			printf("  Alias(%3d):    %s\n", $j, $alias_entry{$j}) if( $DEBUG );
+		    }
+
+		    $j++;
+		}
+	    }
+	}
+    }
+
+    # Close the zone file...
+    close( DNS_ZONE );
+
+    # Do we have a reverse file for this domain?
+    if( $dns_rev && !$got_network ) {
+	# Figure out the network address from the reverse...
+	# Rev: '42.42.42.in-addr.arpa'
+	@temp      = split( '\.', $dns_rev);
+
+	if( $temp[1] eq 'in-addr' ) {
+	    $network     = "$temp[0].0.0.0";
+	} elsif( $temp[2] eq 'in-addr' ) {
+	    $network     = "$temp[1].$temp[0].0.0";
+	} elsif( $temp[3] eq 'in-addr' ) {
+	    $network     = "$temp[2].$temp[1].$temp[0].0";
+	}
+
+	$got_network = 1;
+	printf("  Network:     $network\n") if( $DEBUG );
+    }
+
+    $domain        = $dns_domain;
+    $mx            = $mx{$number};
+    $mx_pref       = $mx_pref{$number};
+    $ns            = $ns{$number};
+    $maintainer    = $maintainer{$number};
+    $info_txt      = $info_txt{$number};
+
+    if( $dns_file1 ) {
+	$db_file   = "$dnsdir/$dns_file1";
+    } else {
+	$db_file   = "";
+    }
+
+    if( $dns_file2 ) {
+	$rev_file  = "$dnsdir/$dns_file2";
+    } else {
+	$rev_file  = "";
+    }
+
+    $real_entries  = $k;
+    $alias_entries = $j;
+
+    if( $DEBUG ) {
+	printf("  Real entries:  $real_entries\n");
+	printf("  Alias entries: $alias_entries\n");
+    }
+}
+
+# ----------------------
+# proc save_dns( void )
+# Save the dns file
+sub save_dns {
+    my($temp, @tmp1, @tmp2);
+
+    if( $DEBUG ) {
+	printf("Calling save_dns(void)...\n");
+	printf("  Primary domains:   $primary_domains\n");
+	printf("  Secondary domains: $secondary_domains\n");
+    }
+
+    # Put together the reverse address...
+    # Addr: '42.42.30.0' => '30.42.42.in-addr.arpa'
+    if( $network ) {
+	@temp    = split('\.', $network);
+
+	if(! $temp[2] == 0 ) {
+	    $reverse = "$temp[2].$temp[1].$temp[0].in-addr.arpa";
+	} else {
+	    if(! $temp[1] == 0 ) {
+		$reverse = "$temp[1].$temp[0].in-addr.arpa";
+	    } else {
+		$reverse = "$temp[0].in-addr.arpa";
+	    }
+	}
+    } else {
+	$dialog->configure(-text => 'You did not specify a network address...');
+	$dialog->Show;
+
+	return( 1 );
+    }
+
+    if( $new_secondary ) {
+	# Start by store this domain in the global domain-variable...
+	$dns_secondary_zone{$secondary_domains - 1}         = $domain;
+	$dns_secondary_zone_file{$secondary_domains - 1}    = $db_file;
+	$dns_secondary_reverse{$secondary_domains - 1}      = $reverse;
+	$dns_secondary_reverse_file{$secondary_domains - 1} = $rev_file;
+
+	# Remove '$dnsdir' from paths...
+	$dns_secondary_zone_file{$secondary_domains - 1}    =~ s@$dnsdir/@@;
+	$dns_secondary_reverse_file{$secondary_domains - 1} =~ s@$dnsdir/@@;
+
+	# Update the 'Domains' button...
+	$temp = $primary_domains + $secondary_domains - 1;
+	$menu1->command(-label => "$temp. $dns_secondary_zone{$secondary_domains - 1}");
+	$menu1->configure(-state => 'active');
+    } elsif( $new_primary ) {
+	# Start by store this domain in the global domain-variable...
+	$dns_primary_zone{$primary_domains - 1}         = $domain;
+	$dns_primary_zone_file{$primary_domains - 1}    = $db_file;
+	$dns_primary_reverse{$primary_domains - 1}      = $reverse;
+	$dns_primary_reverse_file{$primary_domains - 1} = $rev_file;
+
+	# Remove '$dnsdir' from paths...
+	$dns_primary_zone_file{$primary_domains - 1}    =~ s@$dnsdir/@@;
+	$dns_primary_reverse_file{$primary_domains - 1} =~ s@$dnsdir/@@;
+
+	# Update the 'Domains' button...
+	$temp = $primary_domains + $secondary_domains - 1;
+	$menu1->command(-label => "$temp. $dns_primary_zone{$primary_domains - 1}");
+	$menu1->configure(-state => 'active');
+    }
+
+    # Create the error dialog, just in case...
+    $dialog = $main_dns_window->Dialog(-bitmap         => 'error',
+				       -default_button => 'Oooppps'
+    );
+
+    if(! $old_domain ) {
+	# Just make sure we have a DOMAIN and a NETWORK before we continue...
+	if( ! $domain ) {
+	    $dialog->configure(-text => 'You did not specify a domainname...')->Show;
+	    return( 1 );
+	}
+
+	# Update the serial number...
+	$number = create_serial($serial{$domain_number});
+
+	# Size the system data strings...
+	$serial  = size_string( 'left', $number,  10 );
+	$refresh = size_string( 'left', $refresh{$domain_number}, 10 );
+	$retry   = size_string( 'left', $retry{$domain_number},   10 );
+	$expire  = size_string( 'left', $expire{$domain_number},  10 );
+	$def_ttl = size_string( 'left', $def_ttl{$domain_number}, 10 );
+
+	# ===== Z O N E  F I L E =====
+
+	printf("\n  Saving the zone file...\n") if( $DEBUG );
+
+	# Remove the file from the path...
+	@tmp1 = split('\/', $db_file );
+	$temp = "";
+	for( $i = 0; $tmp1[$i+1]; $i++ ) {
+	    if( $tmp1[$i+1] ) {
+		$temp .= "$tmp1[$i]/";
+	    }
+	}
+
+	# Find and create any directory to the dns file...
+	create_leading_dirs( $temp, 0755 );
+
+	# Open the database...
+	open( DNS_DB, ">$db_file" ) || die "Could not open $db_file...\n";
+
+	# A little header...
+	print DNS_DB "; BIND data file for domain: '$domain'\n";
+	print DNS_DB "; Created by xAdmin/DNS, by <turbo\@tripnet.se>\n";
+	print DNS_DB ";\n\$ORIGIN $domain.\n";
+	print DNS_DB "@\t\tIN\tSOA \t$domain ";
+
+	# Now... Add the DNS maintainer...
+	# --------------------------------
+	if(! $maintainer ) {
+	    $maintainer = "root@$domain";
+	}
+
+	# Check if there is one word in there...
+	$maintainer = single_word( '\.', $maintainer, "\@$domain" );
+
+	# Use a temporary variable here...
+	$temp = $maintainer;
+
+	# Change the at (@) to a dot (.)...
+	$temp =~ s/@/\./;
+
+	# Does the the maintainer exists on the same domain?
+	if( $temp =~ /$domain/ ) {
+	    # Remove the domain...
+	    $temp =~ s/\.$domain//;
+	}
+	printf("    Maintainer: $temp\n") if( $DEBUG );
+	print DNS_DB "$temp ( \n";
+
+	# The database variables...
+	print DNS_DB "\t\t\t\t\t$serial\t; Serial\n";
+	print DNS_DB "\t\t\t\t\t$refresh\t; Refresh\n";
+	print DNS_DB "\t\t\t\t\t$retry\t; Retry\n";
+	print DNS_DB "\t\t\t\t\t$expire\t; Expire\n";
+	print DNS_DB "\t\t\t\t\t$def_ttl )\t; Default TTL\n";
+	print DNS_DB ";\n; System entries...\n";
+
+	printf("    Serial:    $serial\n") if( $DEBUG );
+
+	# Add the NS entry...
+	# -------------------
+	if( $new_secondary ) {
+	    # This is a secondary domain, special case of NS...
+	    if(! $ns ) {
+		$ns = $nameserver;
+	    }
+
+	    printf("    NS record:  $nameserver ($ns)\n") if( $DEBUG );
+	    print DNS_DB "\t\tIN\tNS\t$nameserver.\n";
+	} else {
+	    if(! $ns ) {
+		$ns = "ns.$domain";
+	    }
+
+	    # Check if there is one word in there...
+	    $ns = single_word( '\.', $ns, ".$domain" );
+
+	    if( $ns =~ /$domain/ ) {
+		$temp = $ns;
+
+		# Remove the domain name...
+		$temp =~ s/.$domain//;
+
+		printf("    NS:         $temp\n") if( $DEBUG );
+		print DNS_DB "@\t\tIN\tNS\t$temp\n";
+	    } else {
+		printf("    NS:         $ns\n") if( $DEBUG );
+		print DNS_DB "\t\tIN\tNS\t$ns.\n";
+	    }
+	}
+
+	# Add the MX entry...
+	# -------------------
+	if( $new_secondary ) {
+	    # This is a secondary domain, special case of MX...
+	    if(! $mx ) {
+		$mx = $mailexchanger;
+	    }
+
+	    printf("    MX record:  $mailexchanger\n") if( $DEBUG );
+	    print DNS_DB "@\t\tIN\tMX\t$mx_pref $mailexchanger.\n";
+	} else {
+	    if(! $mx ) {
+		$mx = "mail.$domain";
+	    }
+
+	    # Check if there is one word in there...
+	    $mx = single_word( '\.', $mx, ".$domain" );
+
+	    if( $mx =~ /$domain/ ) {
+		$temp = $mx;
+
+		# Remove the domain name...
+		$temp =~ s/.$domain//;
+
+		printf("    MX:         $temp\n") if( $DEBUG );
+		print DNS_DB "@\t\tIN\tMX\t$mx_pref $temp\n";
+	    } else {
+		printf("    MX:         $mx\n") if( $DEBUG );
+		print DNS_DB "\t\tIN\tMX\t$mx_pref $mx.\n";
+	    }
+	}
+
+	# Add the TXT entry...
+	if( $info_txt ) {
+	    printf("    TXT:        $info_txt\n") if( $DEBUG );
+	    print DNS_DB "@\t\tIN\tTXT\t\"$info_txt\"\n";
+	}
+	print DNS_DB ";\n; Real entries...\n";
+
+	# Add the real entries...
+	for( $i = 0; $i < $real_entries; $i++ ) {
+	    if( $i == 0 ) {
+		# Add the 'network' host... Or something... :)
+		#   Redirects the domainname to the nameserver, makes
+		#   it possible to ping the domainname, without knowing
+		#   any host, like so: 'ping bergsjon.gbg.org' => the
+		#   nameserver responds...
+		$ns_ip = (split(':', $real_entry{0}))[1];
+
+		$temp = size_string('right', '', 16);
+		print DNS_DB "$temp IN\tA\t$ns_ip  ; Network host... Or something... :)\n";
+	    }
+
+	    if( $real_entry{$i} ) {
+		printf("    Real:       $real_entry{$i}\n") if( $DEBUG );
+
+		if( $real_entry{$i} ) {
+		    @tmp1 = split(':', $real_entry{$i});
+
+		    $temp = size_string( 'right', $tmp1[0], 16 );
+		    print DNS_DB "$temp IN\tA\t$tmp1[1]\n";
+		}
+	    }
+	}
+	print DNS_DB ";\n; Alias entries...\n";
+
+	# Now... Finaly, add the CNAME's...
+	for( $i = 0; $i < $alias_entries; $i++ ) {
+	    if( $alias_entry{$i} ) {
+		printf("    Alias:      $alias_entry{$i}\n") if( $DEBUG );
+
+		if( $alias_entry{$i} ) {
+		    @tmp1 = split(':', $alias_entry{$i});
+
+		    $temp = size_string( 'right', $tmp1[0], 16 );
+		    print DNS_DB "$temp IN\tCNAME\t$tmp1[1]\n";
+		}
+	    }
+	}
+	print DNS_DB ";\n; End of file...\n";
+
+	# Close the database...
+	close(DNS_DB);
+
+	# ===== R E V E R S E  F I L E =====
+
+	if( $rev_file && $use_rev ) {
+	    printf("\n  Saving the reverse file...\n") if( $DEBUG );
+
+	    # Open the database...
+	    open( DNS_DB, ">$rev_file" ) || die "Could not open $rev_file...\n";
+
+	    # A little header...
+	    print DNS_DB "; BIND reverse file for domain: '$domain'\n";
+	    print DNS_DB "; Created by xAdmin/DNS, by <turbo\@tripnet.se>\n";
+	    print DNS_DB ";\n\$ORIGIN $reverse.\n";
+	    print DNS_DB "@\t\tIN\tSOA\t$domain ";
+
+	    # Now... Maintainer same as domain?
+	    if( $maintainer =~ /$domain/ ) {
+		$temp = $maintainer;
+
+		# Change the at (@) to a dot (.)...
+		$temp =~ s/@/\./;
+
+		# Remove the domain...
+		$temp =~ s/\.$domain//;
+
+		printf("    Maintainer: $temp\n") if( $DEBUG );
+		print DNS_DB "$temp";
+	    } else {
+		printf("    Maintainer: $maintainer\n") if( $DEBUG );
+		print DNS_DB "$maintainer.";
+	    }
+	    print DNS_DB " ( \n";
+
+	    # The database variables...
+	    print DNS_DB "\t\t\t\t\t$serial\t; Serial\n";
+	    print DNS_DB "\t\t\t\t\t$refresh\t; Refresh\n";
+	    print DNS_DB "\t\t\t\t\t$retry\t; Retry\n";
+	    print DNS_DB "\t\t\t\t\t$expire\t; Expire\n";
+	    print DNS_DB "\t\t\t\t\t$def_ttl )\t; Default TTL\n";
+	    print DNS_DB ";\n";
+
+	    # Add the NS entry in any of the real entries...
+	    for( $i = 0; $i < $real_entries; $i++ ) {
+		if( $real_entry{$i} ) {
+		    # Split it with ':'...
+		    @tmp1    = split(':', $real_entry{$i});
+
+		    if( $tmp1[0] eq 'ns' ) {
+			printf("    NS:         $tmp1[1]\n") if( $DEBUG );
+			print DNS_DB "\t\tNS\t$tmp1[1]\n";
+		    }
+		}
+	    }
+	    print DNS_DB ";\n";
+
+	    # Add the real entries...
+	    for( $i = 0; $i < $real_entries; $i++ ) {
+		if( $real_entry{$i} ) {
+		    # Split the line with ':'...
+		    @tmp1 = split(':', $real_entry{$i});
+
+		    # Now, split the second var with '.'...
+		    @tmp2 = split('\.', $tmp1[1]);
+
+		    printf("    Real:       $tmp2[3] -> $tmp1[0]\n") if( $DEBUG );
+		    print DNS_DB "$tmp2[3]\t\tPTR\t$tmp1[0].\n";
+		}
+	    }
+	    print DNS_DB ";\n; End of file...\n";
+
+	    # Close the database...
+	    close( DNS_DB );
+	}
+    }
+
+    # ===== B O O T  F I L E =====
+
+    printf("\n  Saving the boot file...\n") if( $DEBUG );
+
+    # Open the boot file...
+    open( DNS_DB, ">$config{dns_boot_file}" ) || die "Could not open $config{dns_boot_file}!!!\n";
+
+    # Write out a little header...
+    print DNS_DB "; Name server zone boot file\n";
+    print DNS_DB "; See named(8) for syntax and further information\n";
+    print DNS_DB "; Created by xAdmin/DNS, by <turbo\@tripnet.se>\n";
+    print DNS_DB ";\n; DNS Directory\n";
+
+    # Write the path to the DNS database...
+    print DNS_DB "directory $dnsdir\n\n";
+    print DNS_DB ";\n; type\t\tdomain\t\t\t\tsource file\n";
+
+    # Write the cache path...
+    print DNS_DB "cache\t\t.\t\t\t\t$dns_cache\n";
+
+    # Add the primary domains...
+    # ----------------------------
+    for( $i = 0; $i < $primary_domains; $i++ ) {
+	print DNS_DB ";\n";
+
+	# Add the reverse entry...
+	if( $dns_primary_reverse{$i} ) {
+	    $temp = $dns_primary_reverse{$i};
+
+	    $temp = size_string( 'right', $temp, 32 );
+	    printf("    $i. Primary (rev):  $temp\n") if( $DEBUG );
+	    print DNS_DB "primary\t\t$temp $dns_primary_reverse_file{$i}\n";
+	}
+
+	# Add the zone-file entry...
+	if( $dns_primary_zone{$i} ) {
+	    $temp = $dns_primary_zone{$i};
+
+	    $temp = size_string( 'right', $temp, 32 );
+	    printf("    $i. Primary (zone): $temp\n") if( $DEBUG );
+	    print DNS_DB "primary\t\t$temp $dns_primary_zone_file{$i}\n";
+	}
+    }
+
+    # Add the secondary domains...
+    # ----------------------------
+    for( $i = 0; $i < $secondary_domains; $i++ ) {
+	if( $i == 0 ) {
+	    print DNS_DB ";\n";
+	}
+
+	# Add the reverse file if any..
+	if( $dns_secondary_reverse_file{$i} && $use_rev && $rev_file ) {
+	    # Remove the absolute path to the file/dir...
+	    $dns_secondary_reverse_file = $dns_secondary_reverse_file{$i};
+	    $dns_secondary_reverse_file =~ s@$dnsdir/@@;
+
+	    # Get the reverse address...
+	    $temp = $dns_secondary_reverse_file;
+	    $temp = size_string( 'right', $temp, 32 );
+
+	    printf("    $i. Secondary:      $temp\n") if( $DEBUG );
+	    print DNS_DB "secondary\t$temp $dns_secondary_reverse_file\n";
+	}
+
+	# Add the zone file if any...
+	if( $dns_secondary_zone{$i} ) {
+	    $temp = $dns_secondary_zone{$i};
+
+	    # Just double check if we have entered an existing domain again...
+	    if( $temp eq $domain ) {
+		$new_domain = 0;
+	    }
+
+	    # Remove the absolute path to the file/dir...
+	    $dns_secondary_zone_file{$i} =~ s@$dnsdir/@@;
+
+	    $temp = size_string( 'right', $temp, 32 );
+	    printf("    $i. Secondary:      $temp\n") if( $DEBUG );
+	    print DNS_DB "secondary\t$temp $dns_secondary_zone_file{$i}\n";
+	}
+    }
+
+#    # Make sure we realy have a new domain...
+#    if( $new_domain ) {
+#	# Add the new domain...
+#	if( $new_primary ) {
+#	    printf("    New PRIMARY:       $domain\n") if( $DEBUG );
+#	    print DNS_DB ";\n";
+#
+#	    # Remember this domain for later...
+#	    $dns_primary_zone{$primary_domains-1}         = $domain;
+#	    $dns_primary_zone_file{$primary_domains-1}    = $db_file;
+#	    $dns_primary_reverse{$primary_domains-1}      = $reverse;
+#	    $dns_primary_reverse_file{$primary_domains-1} = $rev_file;
+#
+#	    # Remove '$dnsdir' from paths...
+#	    $dns_primary_zone_file{$primary_domains-1}    =~ s@$dnsdir/@@;
+#	    $dns_primary_reverse_file{$primary_domains-1} =~ s@$dnsdir/@@;
+#
+#	    # Add the reverse file...
+#	    $temp = size_string( 'right', $reverse, 32 );
+#	    print DNS_DB "primary\t\t$temp $dns_primary_reverse_file{$primary_domains-1}\n";
+#
+#	    # Add the zone file...
+#	    $temp = size_string( 'right', $domain, 32 );
+#	    print DNS_DB "primary\t\t$temp $dns_primary_zone_file{$primary_domains-1}\n";
+#	}
+#
+#	if( $new_secondary ) {
+#	    printf("    New SECONDARY:  $domain\n") if( $DEBUG );
+#
+#	    # Remember this domain for later...
+#	    $dns_secondary_zone{$secondary_domains-1}      = $domain;
+#	    $dns_secondary_zone_file{$secondary_domains-1} = $db_file;
+#
+#	    # Remove '$dnsdir' from path...
+#	    $dns_secondary_zone_file{$secondary_domains-1} =~ s/$dnsdir\///;
+#
+#	    # Add the zone file...
+#	    $temp = size_string( 'right', $domain, 32 );
+#	    print DNS_DB "secondary\t$temp $dns_secondary_zone_file{$secondary_domains-1}\n";
+#	}
+#    }
+
+    # Close the boot file...
+    close( DNS_DB );
+
+    # No longer a new or a old domain...
+    # nore do we have any new secondary or primary...
+    $new_domain = 0;  $new_secondary = 0;
+    $old_domain = 0;  $new_primary   = 0;
+}
+
+# ----------------------
+# proc do_listbox( number, type )
+# Read in and populate the listboxes...
+sub do_listbox {
+    local($number, $type) = @_;
+
+    printf("Calling do_listbox($number, $type)...\n") if( $DEBUG );
+
+    # Zero these variables before we read in the new file...
+    $maintainer{$number}  = "";
+    $ns{$number}          = "";
+    $mx{$number}          = "";
+    $info_txt{$number}    = "";
+    $mx_pref{$number}     = 0;
+    $network              = "";
+
+    read_dns_file( 'real',  $number, $type );
+    read_dns_file( 'alias', $number, $type );
+
+    # Sort the lists alphabeticly...
+    %real_entry  = sort_list('real', %real_entry);
+    %alias_entry = sort_list('alias', %alias_entry);
+
+    # Insert the 'real' dns enties in the first listbox...
+    listbox_dns($dns_listbox_1, 'real');
+
+    # Insert the 'alias' dns enties in the second listbox...
+    listbox_dns($dns_listbox_2, 'alias');
+}
+
+# ----------------------
+# proc single_word( delimiter, word, addition )
+sub single_word {
+    local( $delimiter, $word, $addition ) = @_;
+    my( @temp ) = "";
+
+    # Split the variable...
+    @temp = split( $delimiter, $word );
+
+    # Check if there is a second entry...
+    if(! $temp[1] ) {
+	# Nope, only one word, add the 'addition'...
+	$word .= "$addition";
+    }
+
+    # Now, return the variable again...
+    return( $word );
+}
+
+    
+# ----------------------
+# proc create_serial( old_serial )
+# Figure out the serial number...
+sub create_serial {
+    local( $ser_no ) = @_;
+    my( $sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst ) = 0;
+
+    ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = gmtime(time());
+    if( length( $mon ) == 1 ) {
+	# The months starts at no 0, not good...
+	$mon++;
+
+	# If between Jan and Sept, add a zero first...
+	if( $mon < 10 ) {
+	    $mon  = "0$mon";
+	}
+    }
+    if( length( $mday ) == 1 ) {
+	$mday = "0$mday";
+    }
+
+    if( $ser_no ) {
+	# Increase the serial no with one...
+	$serial   = $ser_no++;
+    } else {
+	$number   = "000";   # This will be increased with one when saving...
+	$serial   = "$year$mon$mday$number";
+    }
+
+    printf("  New serial:        $serial\n") if( $DEBUG );
+    return( $serial );
+}
+
+sub sort_list {
+    local($type, %line) = @_;
+    my($key, $i, $count);
+    my(@temp1)   = ();
+    my(%temp2)   = ();
+    my(%output)  = ();
+
+    if( $type eq 'alias' ) {
+	# Find the variable key we should sort on...
+	for( $i = 0; $i < $alias_entries; $i++ ) {
+	    if( $alias_entry{$i} ) {
+		@temp1 = split(':', $alias_entry{$i});
+		$temp2{$temp1[0]} = $alias_entry{$i};
+	    }
+	}
+    } elsif( $type eq 'real' ) {
+	# Find the variable key we should sort on...
+	for( $i = 0; $i < $real_entries; $i++ ) {
+	    if( $real_entry{$i} ) {
+		@temp1 = split(':', $real_entry{$i});
+		$temp2{$temp1[0]} = $real_entry{$i};
+	    }
+	}
+    } else {
+	return;
+    }
+
+    # Sort the list...
+    $i = 0;
+    foreach $key (sort(keys %temp2)) {
+	$output{$i} = $temp2{$key};
+	$i++;
+    }
+
+    return(%output);
+}

@@ -1,0 +1,5672 @@
+#!/usr/bin/perl -w
+
+# Comment these two following lines if you want
+# support for my program TCPQuota, and set check_tcpquota
+# to 1 (one)
+#use Msql;
+#package main;
+$check_tcpquota = 0;  # Set this to zero (0) if you don't want Msql...
+
+# Wanna play it safe? When xAdmin creates new files or
+# change old ones, it first creates a 'xxx.new' file
+# then rename it... If you set this to one (1) it will
+# not rename it... This _CAN_ break the functionality!
+$play_it_safe   = 0;
+
+# Should we follow the Debian guidelines?
+# Meaning: A program may not modify a file not in it's
+# possession, ie passwd/shadow/group/gshadow etc...
+# If yes (1), we use 'useradd' to add a user to the
+# database, otherwise we use my own routines.
+$debian_guidelines = 0;
+
+# = = NO USER MODIFIABLE LINES BELOW HERE = =
+# = = = = = = = = = = = = = = = = = = = = = =
+
+# -- C V S  L O G G S --
+# $Log: xedit-users,v $
+# Revision 1.49  1998/08/30 20:26:40  turbo
+# * Addes a '&' to indicate my own function (they glow in such a nice blue color :)
+# * Don't add a space to the listbox line if not debuging
+#
+# Revision 1.48  1998/07/29 23:04:30  turbo
+# * More waitboxes, correct action message.
+# * Fixed the '-width' flag to the Listboxes, problem was that sometimes the
+#   variable was not initialized, and sometimes it was, giving strange error
+#   outputs (even though it worked... :)
+#
+# Revision 1.47  1998/06/26 13:45:48  turbo
+# * New functions:
+#     clear_variables() - New try at this... This time do not clear 'user
+#                         global' variables (like %passwd_line and the like),
+#                         only those that have to do with the GUI... This _MIGHT_
+#                         work better... I hope... :)
+# * Found one _VERY_ annoying and old bug with a uninitialized variable in
+#   Widget.pm... Or somewhere around there... I used '-width => $win_size',
+#   but 'win_size' where not initalized there...
+# * Created an input gadget below the 'Secondary groups' listbox in the 'add user'
+#   window... Now we don't have to output the 'choose group to add user to'...
+# * Added more '&'... I'll guess I'll be finding these for a long time... :)
+#
+# Revision 1.46  1998/06/23 13:33:42  turbo
+# * New functions:
+#     load_files() - Moved all the 'reading stuff' here, to avoid duplicate
+#                    loading of files, which makes the program to behave
+#                    irrationally.
+#     wait_box()   - Moved a lot of wait box text configuration here, to save
+#                    some lines of code.
+# * Found the bug that caused the addition/removal of groups behave strange...
+#   I encreased the number of groups _BEFORE_ I have saved it!!
+# * First destroy the 'add group' window, THEN save (etc) the files, not the
+#   other way around... I think...
+# * Use chomp() instead of chop()... Might be safer, I hope... :)
+# * Incase we are debugging, use default values when we are adding a group,
+#   so we don't have to input the same values all the time.
+# * Added a lot of '&' to indicate a 'home made' function... The dark blue
+#   chines so bright and beatifully in X... :)
+# * Don't clear any variable list, load the files once instead!
+# * Don't forget the version number in the Groups/Quota window...
+#
+# Revision 1.45  1998/06/21 15:10:11  turbo
+# * Store the locked users homedir in '/var/spool/removed_dirs' instead...
+# * Only close the add user window if we have answered OK on the 'add user?'
+# * Only try to save the group file if we want same UID/GID, _OR_ the username
+#   equals the primary group name.
+# * There must have been a change in perl's 'find()' function... Before we only
+#   got the files INSIDE of the directory we wanted, now we get the whole
+#   path... Strange...
+# * Moved the 'rearange_variable_list()' to the save_passwd_turbo.pl library,
+#   it is only used by my 'save_passwd_file()'...
+#
+# Revision 1.44  1998/06/20 22:02:28  turbo
+# * New functions:
+#     listbox_group_header() - Outputs a little header to the group lists
+#     lock_passwd()          - Lock the passwd/shadow/group/gshadow files
+#                              so that they can be edited safely (doesn't
+#                              work quite yet though...
+#     clear_variable_list()  - Clear some crap variables before we output
+#                              the main windows, to minimize the risk of
+#                              seg faults.. Doubt that it will work, but...
+# * Renamed the function 'listbox_header()' to 'listbox_user_header()' because
+#   the headers differs between the group listbox and the user listbox.
+# * Moved the functions 'save_passwd_file()', 'save_group_file()' and
+#   'create_shadow_line()' to a separate file that we could 'require'...
+# * Make it possible to ether follow or break the Debian guidelines (I prefer
+#   to use my own 'save_passwd_file()' function which sorts the file and adds
+#   the new user in the correct place etc). If we are following the Debian
+#   guidelines we have to use '/usr/sbin/useradd' to the files...
+#   Requires one of to library files: 'xadmin_save_{debian|turbo}.pl'
+# * Some new default variables...
+# * Output the CVS version in the window title (taken from the CVS Revision
+#   string)...
+# * Incase we are debugging, use default values when we are adding a user,
+#   so we don't have to input the same values all the time.
+# * Only care about checking the TCPQuota values incase we have set the variable
+#   'check_tcpquota' to true at the top of the file...
+# * Fixed the function 'rearange_variable_list()', now it works propperly
+#
+# Revision 1.43  1998/03/04 16:04:36  turbo
+# * Output a wait box when starting up, so that we know what is happening...
+#   Update it when ever we doing something with the passwd/group/nis database...
+# * Call the update NIS/YP after we have saved the group/passwd file propperly,
+#   not in the save_passwd_file() function...
+# * Fixed the bug with the lock/unlock user functions...
+# * Commented out some debug messages conserning the creation of a users
+#   home directory, don't need it...
+# * When we insert/delete a user in the variable list, make sure we rearange
+#   the list, using the new function 'rearange_variable_list()'...
+#
+# Revision 1.42  1998/02/22 01:52:39  turbo
+# * Don't support Msql/TCPQuota as default, make that up to the user/admin
+# * If we should not support Msql/TCPQuota, make sure we disable the config
+#   options about that...
+#
+# Revision 1.41  1998/02/21 18:18:40  turbo
+# Make sure we do not try to save the TCPQuota if we have choosed NOT to support
+# it... *blush*
+#
+# Revision 1.40  1998/02/18 19:48:26  turbo
+# * Moved the loading of the Msql library to the top of the line, so that I can
+#   distribute the program without demanding Msql. The user can uncomment this
+#   easier if it is at the top...
+# * Added a 'play safe' option, don't rename any new files if this is set.
+# * Added 'if( $DEBUG )' to some printf()'s I missed...
+# * After loading the printcap, CLOSE THE FILE!! *blush*
+#
+# Revision 1.39  1998/02/18 17:24:26  turbo
+# Give the option to totaly ignore the TCPQuota/Msql package...
+#
+# Revision 1.38  1998/02/17 19:59:34  turbo
+# * Added support to only update/save the NIS/YP database, omitting the
+#   '/etc/passwd' file (security reasons?)...
+# * When choosing the 'Save passwd file' or 'Update listbox' in the menu,
+#   make sure we update the listbox propperly...
+# * Fixed some bugs with saving the NIS/YP database...
+#
+# Revision 1.37  1998/02/15 22:18:53  turbo
+# * Don't forget to load the NIS database in the main users function...
+# * Only warn if we can't open the NIS database, don't die...
+# * Added the menuoption to save and load the NIS database. Have the loading,
+#   saving and printing in it's own sub menu instead of in the main menu...
+# * Added the option to create a new NIS database, by calling the function
+#   'save_nis()' with parameters 'new, new'... Cycle through the passwd/shadow
+#   entries one by one, storing the users which have a UID between min_uid and
+#   max_uid.
+#
+# Revision 1.36  1998/02/15 20:54:35  turbo
+# * Make sure we load the NIS database, if we support that that is...
+# * Modified the description of some of the functions to better reflect there
+#   usage...
+# * Make sure we save the NIS database correctly, with the password from the
+#   shadow file
+# * Added delete and update actions to the 'save_nis()' function...
+#
+# Revision 1.35  1998/01/16 14:55:56  turbo
+# Perl changed the way it handled file handles... When we cyckle through the
+# file, make sure we only do that while ! eof.
+#
+# Revision 1.34  1998/01/13 11:58:12  turbo
+# * Use 'File::Find', 'File::Copy' instead of home made functions...
+# * Use 'Tk::FileDialog' for the dir selector I just added, removed the function
+#   'get_home_dir()' it was easier to add it directly to the button...
+# * Change owner of the file/dir we have just created right after it have been
+#   created, instead of loading the directory again... Saves time and memory.
+# * If we are adding a group, give a default, free GID...
+# * Create the main windows _BEFORE_ we load the files... Doesn't seem to
+#   core dump as often.
+# * Make sure we only create the GID/Groupname _IF_ the primary group is the
+#   same as the UID/Username...
+# * Renamed the function 'edit_nis_db()' to 'save_nis()' to better reflect there
+#   usage... Also created the functions 'edit_nis()' and 'save_file_quota()'.
+#   None of the funcions does anything yet though...
+# * Duplicated the function 'choose_group()' to 'choose_user()' so that we can
+#   easy add members to a group via a selector...
+# * Added automatic GID selection to the function 'choose_id()'...
+# * The standard debug output cleanup...
+#
+# Revision 1.33  1998/01/12 03:49:14  turbo
+# * Some cleanup of the code, to make it easier to follow/read...
+# * Fixed the group editor and the locking/unlocking of user accounts, now it
+#   works... I think... :)
+# * When adding/changing a group,
+#   . make sure we update the listbox,
+#   . remember to add the group members (if any) to the group shadow file
+#   . make sure we create the listbox propperly
+#   . when we are saving the group file, we don't need the window, removed that
+#     option to the function...
+#   . close the 'add group' window after we have added a group
+#   . if we enter a value in the 'primary group' input gadget, we should update
+#     the home value, depending on how we want our homes, Group home, letter
+#     home or simple homes...
+# * Rewrote the 'choose_id()' function a little, made it work better...
+# * When locking/unlocking a user, archive the home dir with absolute path
+#   using 'tar [cx]zPf'...
+# * Output a error dialog instead of output on STDOUT, if we are trying to lock
+#   an already locked user account...
+# * Only try to remove the home dir, if we are not debugging it... To avoid
+#   permanent damage to the FS... :)
+# * The two buttons in the main user window, 'Expand/Unexpand Shadow' should
+#   be mutualy exclusive, which they are now...
+# * Give the option to have default shadow values when adding/changing a user...
+# * Hardcode the Msql/TCPQuota tables, no need to have them in variables, they
+#   wont change, I'll see to that!! :)
+#
+# Revision 1.32  1997/10/18 00:44:38  turbo
+# * Create/Add the groups just after we have finished saving the passwd file,
+#   not in the 'add_user()' function...
+# * When we update the 'Secondary groups' listbox, also save the group in a
+#   variable...
+# * Added support for removing of a group and/or a user from a group if and
+#   when we so desire...
+#
+# Revision 1.31  1997/10/14 18:34:09  turbo
+# * If we support 'same username - same group' create the group correctly,
+#   and if we let the user belong to other groups, add the user to them BEFORE
+#   saving the passwd file (so that we can set groupID on the files/dirs)...
+# * If we remove a user, don't forget to remove him/her from the group file to,
+#   and if adding a user to a secondary group, don't forget the file...
+# * When editing a user, don't forget to clear some variables that is user-
+#   specific, and to fill the 'Secondary groups' listbox...
+# * In the 'Edit/Add user' window, add support to change/add the shadow values
+#   and the diskquota... To save space, have a button that expands/unexpands
+#   the frame, and only have one of the choices at one time...
+#
+#   Added the function 'edit_shadow_values()' and 'edit_quota_values()' that
+#   creates the frames, and the function 'get_secondary_groups() that checks
+#   the group file for the user...
+#
+#   This function is not fully implemented yet though, I had more urgent matters
+#   to attend to, commes in the next version, I hope... :)
+# * Added the 'Reload listbox' to the edit/add window...
+#
+# Revision 1.30  1997/10/12 21:20:57  turbo
+# * Push the user id when OK to add user instead of later...
+# * In the 'Config->Edit list sizes', be able to set the 'First UID' to start
+#   check for free one...
+#
+# Revision 1.29  1997/10/12 16:13:10  turbo
+# * Added support for giving a default, first availible free UID/GID...
+#   Function stolen from the script '/usr/sbin/adduser' that commes with Debian.
+#   The new function 'choose_id()' does this...
+# * Read the group file after the passwd file and the group-shadow after the
+#   passwd-shadow...
+#   Added the function 'read_gshadow_file()' that reads in the group-shadow...
+#   this does not work yet though, because I didn't know how the gshadow file
+#   was constructed... Now I do...
+#   When creatin a shadow line, also support group-shadow...
+# * If we have desided that the user's UID should be the same as the GID, with
+#   the same groupname, then save the group file just before we save the passwd
+#   file...
+# * When saving the passwd-file, sort the variable list by UID's...
+# * Fixed some buggs conserning uninitialized variables when choosing the menu
+#   option: 'Files->Save the passwd file'... The function 'save_passwd()' is
+#   called directly, without setting some variables that I use in the function...
+# * After we have scanned the user list in the 'save_passwd()' function, make
+#   sure the user is added... I commented this before since it should be taken
+#   care of before, but discovered that if we choose NOT to add the user in
+#   UID order we need this... *sigh*
+# * Added support to add the group in GID order (true if we choose to add the
+#   user in UID order).
+# * Added support to be able to output the user-listbox to a file, or to print
+#   it to a printer configured in '/etc/printcap'...
+#   Added the function 'read_printcap()' to get the printers...
+#   Added the option to enter which file to output to in the menu choice
+#   'Config->Edit paths/files'.
+# * Moved the functions 'listbox_header(), listbox_prepare()' higher up in the
+#   source code...
+#
+# Revision 1.28  1997/10/10 04:37:10  turbo
+# * Added an option to be able to add the users in UID order... Yes/No menu...
+#   Wonder if anyone want to say no to this...
+# * Added an option to have the same groupname/gropid as username/userid...
+#   I don't like that way, but... If we want this, create the group BEFORE
+#   we change the passwd file (in the 'add_user()' function... Does not work
+#   yet though... Have to rewrite the function 'save_group_file()' a lot probably.
+# * The menu should read 'Allow/Disallow user TCP quota', not 'Allow/Disallow
+#   user quota'. TCPQuota is one thing, and Quota is another...
+# * Do _NOT_ call 'add_user()' when we have created/changed a password, do it
+#   when we say 'Add user' or 'Done' in the adduser/changeuser window...
+# * Fixed some buggs (quite big ones to) in the 'save_passwd_file()' function
+#   conserning when and where to add the user exactly... Now it works to add,
+#   remove any user anywhere in the file... Esspesally if we want it in UID
+#   order.
+# * Instead of separating the creation of the passwd/shadow lines, group them
+#   together more, and call the function 'create_shadow_line()' which does the
+#   actual creation of the line... More readable source this way... I think... :)
+# * We no longer need to be absolute certain that we have the new user added in
+#   the end of the 'save_passwd_file()', so commented that out... It was a groovy
+#   buggfix... I fixed it above in a much cleaner way...
+#
+# Revision 1.27  1997/10/07 15:36:06  turbo
+# * Make sure we check if a config-variable is ether yes or 1, no or 0...
+# * Added the option to have the user directory in the root of the home dirs,
+#   like: /home/<user>, or /home/<group>/<user>
+# * Incase we can not open the mSQL server config file, we do not support
+#   TCPQuota...
+# * After saving the config file, just return, do not call 'goto_main()'...
+# * Fixed some buggs in the saving of the password/shadow file... Forgot which
+#   ones though... :)
+# * Use modulo to check when to enter a newline in the save_passwd_file()
+#   function...
+# * When trying to remove the users home directory, only try five times...
+#   If we havent succeeded then, just leave it to be made manualy...
+# * When creating the Config menu, hardcode the Yes/No entries, with the value
+#   1/0 instead of having a foreach-loop...
+#
+# Revision 1.26  1997/09/24 19:22:31  turbo
+# Update the two checkbuttons, depending on the values in the window with
+#   the help of the new function 'tick_override()'...
+#
+# Revision 1.25  1997/09/24 16:44:08  turbo
+# * Added the possibility for the envvar 'XADMIN_DEBUG'...
+# * Moved the deletion of a directory to a separate function, which now cycles
+#   until the directory does not exists...
+# * Removed the 'Secondary groups' input gadget, and instead added the listbox
+#   'Secondary groups' in the add/edit user window...
+#   The 'groups' menues was to big to fit in a screen...
+# * Added the 'choose_group()' function, which lets you choose from a list of
+#   groups in a listbox...
+#
+# Revision 1.24  1997/09/22 21:34:08  turbo
+# * Fixed the deactivate/reactivate (lock/unlock) functions... Must have broken
+#   them somehow, somewhere... Darn, I hate when that happens...
+#   A lot of buggs here, I hope I found them all... (Which I probably diden't :)
+# * THIS time I hope I update the listbox correctly when something is happening
+#   to the content... (I wonder where I'we heard that before... :)
+# * When (trying to, atleast) deleting a users homedir, check if we succeded...
+#   This does not work propperly yet though, it leaves some files/dirs left...
+#   Darn!!
+# * Added the possibility to have a 7 bit or 8 bit crypt mode... Diden't work
+#   though...
+# * Moved the exchangeng of the correct password to a separate function. The
+#   variable '$passwd_line{<userno>}' should always contain the encrypted
+#   password...
+#
+# Revision 1.23  1997/09/21 16:50:07  turbo
+# * Removed the two config-sub-menus, 'Support letter homes Y/N' and 'Support
+#   group homes Y/N'. Instead I added the menu 'Homes sub dir None/Letter/Group'.
+# * After adding a user, close the window behind us...
+# * When loading the shadow file, replase the 'x' passwd with the encrypted
+#   password from the shadow file...
+# * When saving the passwd/shadow file, IF we have any shadow entries, save them
+#   instead of the default values...
+# * Don't forget to change the mode of the shadow file, read/rete only for root.
+# * When saving the passwd/shadow file, make sure we update the variable list
+#   and the listbox, not just the files..
+# * Forgot a lot of 'if( $DEBUG )' in the printf's...
+#
+# Revision 1.22  1997/09/20 17:59:16  turbo
+# * Moved the creation of the header to a separate function, listbox_header().
+# * Don't load the passwd file if using the group-editor...
+# * If we choosed NOT to support empty passwords, give the user a chance to
+#   overide on a per-user-basis.
+# * When loading the shadow file, exchange the 'x' passwd in the passwd
+#   variables with the encrypted password from the shadow file.
+# * When saving the passwd/shadow file, enter the user line to both of the
+#   files simultanisly, instead of file by file... Saved a lot of time and
+#   resources...
+# * If we don't support shadow, remove all shadow files...
+# * Added support to create a group shadow file...
+# * Don't create the Config/Files menu if in the quota-editor, they have no
+#   usage there...
+# * 'Destroyed' the sort function a little, untill I figure out a better way.
+#   When we have duplicates... Then what?
+#
+# Revision 1.21  1997/09/19 15:00:27  turbo
+# * Added the submenu 'Files', which let's you save/load the passwd file.
+# * Fixed the bugg with the 'duplicate' passwd entries...
+#
+# Revision 1.20  1997/09/19 03:34:36  turbo
+# * Added the possibility to change the size of the listbox from inside of the
+#   program (added the function 'edit_list_sizes()', and changed some variable
+#   names).
+# * Have the sub-editor buttons in a menu instead of separate buttons.
+# * Removed the 'read_fstab_file()', no need for this here...
+# * Moved the preparation of the listbox to a separate function, 'prepare_listbox()'
+#   thought I could need it more than once...
+# * When adding a user, check if the user already exists, imiditly when entering
+#   the name.
+# * Same with the UID, and that the login shell really exists.
+# * Made the 'sort_list()' function work properly, it really sorts numbers correct
+#   now... :)
+# * If we sort the list, make sure we do not save the sorted file, but instead
+#   'resort' (nosort) the list before saving.
+# * When saving the passwd/shadow/group files, make a backup (<file>.old).
+# * Fixed some other minor buggs, and a lot more debug info...
+#
+# Revision 1.19  1997/08/24 02:11:33  turbo
+# * Changed the with of some of the fields
+# * Added support for sorting the list, doesn't work propperly yet though...
+#   Added it in the 'Config menu'.
+#
+# Revision 1.18  1997/08/24 01:14:31  turbo
+# Fucked up the dating... My clock was two month ahead of real time... Edited
+# the CVSROOT dir.. Maby I shouldn't have... :)
+#
+# Revision 1.17  1997/09/23 13:51:20  turbo
+# * When debuging, use a COMPLETE 'virtual' file system, nothing from '/etc',
+#   but instead in './etc'...
+# * When an error occures, make sure we only die if it is serious, otherwise
+#   just output an 'ERROR: xxx' string...
+#   If the error is a missing file or directory, try to create it instead of
+#   dying...
+#
+# Revision 1.16  1997/08/16 19:15:17  turbo
+# * After 'reading' the tcptab (user+quota), also get the allowence list
+# * Indicate if user is allowed (Y/N) in the listview.
+# * If quota = 0, remove user from the list, no need to be there and waste
+#   the space...
+#
+# Revision 1.15  1997/08/15 22:58:59  turbo
+# * Added a checkbutton, 'Disallow user TCP quota'.
+# * Added possibility to change the mSQL server from inside the program.
+# * Got the saving and the allowence/disallowence of TCP quota of a user to work
+#
+# Revision 1.14  1997/08/15 11:18:35  turbo
+# Started adding support for my (and CCW's) TCPQuota package. It don't save
+# the quota yet though. The function for it is there, I just don't call it...
+#
+# Revision 1.13  1997/08/12 09:47:02  turbo
+# Fixed some buggs when resizing a window... Some bugs still remain, for example
+# some windows should not be resizable.
+#
+# Revision 1.12  1997/08/10 14:11:15  turbo
+# * Added the possibility to pre-check if we support master, slave or no NIS.
+# * When debugging, the NIS dir is in './var/yp' and when not, in '/var/yp'.
+# * Added the function 'edit_nis_db()', doesn't do squat yet though.
+# * When opening a file, and fails, tell the user why.
+# * Now the adding of a group, and saving the group file works.
+# * Don't get jumpy if the first word/char in the password file is a '+' (NIS)
+#   when doing the list entries.
+#
+# Revision 1.11  1997/08/07 17:18:41  turbo
+# * Added some relief to the frames, which makes the apparence look a little
+#   better.
+# * Added more detailed debugging. 0 is no debugging, 1 is total debugging
+#   and 2 is real action but with debug output.
+# * Moved the proc 'find_dir()' to the library since it was needed in the
+#   dns editor. No need to have the proc in both files...
+#
+# Revision 1.10  1997/08/05 04:29:44  turbo
+# Changed the way the quota editor works, had to rename some '$SIZE_xxx'
+#   variables. Now the quota editor can be called in two ways, first by
+#   choosing it as the main editor, where it first asks about what FS to
+#   check/change, and then gives a list of users with quota there. The
+#   other way is when editing a user, gives the possibility to change
+#   quota for that user on a specified file system. The last way does not
+#   work properly yet though.
+#   It can still not save the values, only look at them, I probably have
+#   to write a C program for that, since perl don't seem to have any support
+#   for quota yet...
+#
+# Revision 1.9  1997/08/03 17:50:20  turbo
+# * Added the Group editor.
+#   1. Can now add, remove and edit groups to...
+#   2. Had to change the aparense of the program and the location of the functions
+#      in the code a little to correspond to the new functions...
+#
+# * Changed some buggs with the '$defaults{xx}' and '$config{xx}' variables,
+#   only at the top of the source, should we use '$defaults'...
+#
+# * Added the possibility to change the path to the 'Deactivated users directory'
+#   from inside of the program.
+#
+# Revision 1.8  1997/08/02 17:19:56  turbo
+# Changed the variable $CONFIG_DIR to contain '/etc/xadmin' instead
+#   of just '/etc'.
+#
+# Revision 1.7  1997/08/02 16:47:27  turbo
+# Added some 'if( $DEBUG )' to the printf's. Debug output only if DEBUG eq 1.
+#
+# Revision 1.6  1997/08/02 16:08:54  turbo
+# Moved the variable '$DEBUG' higher upp in the source code, and also shortened
+#   the line a little (so it could be changed with 'sed' easier).
+#
+# Revision 1.5  1997/04/27 01:39:52  turbo
+# xedit-users:
+#   * Changed the default directory to store the removed/frozen user dirs to
+#     '/var/removed_dirs'.
+# xedit-net:
+#   * Added possibility to read in an old network start script, and act upon
+#     what that cointain...
+#   * Started adding the possibility to have more than one interface...
+#
+# Revision 1.4  1997/04/26 21:38:28  turbo
+# Changed the default lib dir to '/usr/local/lib/maintainer' when not
+# debugging.
+#
+# Revision 1.3  1997/04/20 17:42:56  turbo
+# ./bin/xedit-users:
+#   * Moved part of the 'create leading dirs' to ./lib/xadmin.pl
+#   * Changed the default_dir_mode (rwxr-xr-x)
+#
+# ./bin/xedit-dns:
+#   * Changed the window/icon title when editing an entry
+#   * Removed the new_entry(), wasn't needed
+#   * Removed the rem_dns(), wasn't nedded
+#   * Added support for remove-entry
+#   * Saving to the 'real' database, instead of in '/tmp'
+#   * Fixed some buggs in reading/saving dns files
+#   * Started adding the saving of the boot file, incase of new domain
+#
+# Revision 1.2  1997/04/07 23:40:20  turbo
+# Small changes in code to support 'DNS editor'...
+# Added the 'DNS editor' binary.
+#
+# Revision 1.1  1997/03/29 04:08:57  turbo
+# * Finaly got the 'Deactivate' and 'Reactivate' functions to work...
+#   Also got the kreation of the home directory to work... (FINALY!!! :)
+# * Cleaned up the GUI and fixed some small buggs, and added '-tearoff => 0'
+#   to avoid the possibility to 'tearoff' a yes/no menu...
+# * Added 'Edit quota for user' support.
+#
+# Revision 1.0.0.1  1997/03/12 02:10:44  turbo
+# Initial release of 'XAdmin', a administration tool for X11.
+# Needs perl and perl-tk. Made by Turbo Fredriksson <turbo@tripnet.se>
+#
+
+use Tk;
+use Tk::Dialog;
+use Tk::ErrorDialog;
+use Tk::FileDialog;
+use Tk::WaitBox;
+use File::Find;
+use File::Copy;
+use GDBM_File;
+
+# DEBUG = 0    =>   Ingen debugging, real actions
+# DEBUG = 1    =>   Virtual file system, debug output
+# DEBUG = 2    =>   Real actions, debug output
+$DEBUG  = 1;
+
+# Check if we have the variable XADMIN_DEBUG...
+if( $ENV{'XADMIN_DEBUG'} ) {
+    $DEBUG = $ENV{'XADMIN_DEBUG'}
+}
+
+# Done:
+#   * Add user
+#   * Remove user
+#   * Edit user
+#   * Deactivate user
+#   * Reactivate user
+#
+#   * Add group
+#   * Remove group
+#   * Edit group
+# Left:
+#   * Sub-menus in the 'Add user' window...
+#   * Member of more than one group...
+#   * Move home on FS when changing home...
+#   * <other_bugs> ?
+
+# These is just to make perl stop complaining,
+# about 'Name xx used only once'.
+# They are used, but in the library...
+$CONFIG_DIR   = "";
+$domain       = "";              # No domain as default...
+$userno       = 0;               # Start out with no user choosen...
+$groupno      = 0;               # Start out with no group choosen...
+$allow_empty  = 0;               # Allow empty password, no
+$secondary    = 0;               # No secondary groups...
+$win_size     = 0;               # Size of window
+$play_it_safe = $play_it_safe;   # Should we keep the old version of the files (xxx.old)?
+$SORT_FILE    = 0;               # How should we sort the file? 
+
+$CONFIG_DIR                      = '/etc/xadmin';
+$CONFIG_FILE                     = 'xedit-users';
+
+# We should not sort the files, only the list...
+$SORT_FILE                       = 0;
+
+$defaults{min_uid}               = 1000;
+$defaults{max_uid}               = 65535;
+$defaults{min_gid}               = 1000;
+$defaults{max_gid}               = 65535;
+
+# Passwd entries...
+$defaults{size_quota}            = 5;
+$defaults{size_name}             = 11;
+$defaults{size_passwd_crypted}   = 14;
+$defaults{size_passwd_desc}      = 10;
+$defaults{size_id_number}        = 6;
+$defaults{size_id_name}          = 11;
+$defaults{size_fullname}         = 40;
+$defaults{size_homedir}          = 30;
+$defaults{size_shell}            = 25;
+$defaults{size_members}          = 25;
+
+# Quota entries...
+$defaults{size_name_quota}       = 15;
+$defaults{size_block_used}       = 7;
+$defaults{size_block_soft}       = 7;
+$defaults{size_block_hard}       = 7;
+$defaults{size_block_grace}      = 7;
+$defaults{size_files_used}       = 7;
+$defaults{size_files_soft}       = 7;
+$defaults{size_files_hard}       = 7;
+$defaults{size_files_grace}      = 7;
+
+# Some misc defaults...
+$defaults{min_nis_uid}           = "1000";
+$defaults{max_nis_uid}           = "65535";
+$defaults{first_uid}             = "1000";
+$defaults{users_gid}             = "100";
+$defaults{win_font}              = "-*-Helvetica-Medium-R-Normal--*-140-*-*-*-*-*-*";
+$defaults{main_func}             = 'users';
+$defaults{sort_by}               = 'nosort';
+$defaults{passwd_bits}           = 7;     # Seven bit or Eight bit...
+
+# Some path defaults...
+$defaults{default_sh}            = "/bin/bash";
+$defaults{skel_dir}              = "/etc/skel";
+ 
+if( $DEBUG ) {
+    if( $DEBUG < 2 ) {
+	$use_debug_defaults      = 1;
+    } else {
+	$use_debug_defaults      = 0;
+    }
+}
+
+if( $use_debug_defaults ) {
+    # Debug defaults...
+
+    $defaults{fstab}             = "./etc/fstab";
+    $defaults{shells}            = "./etc/shells";
+    $defaults{tcpquota_lib}      = "./etc/tcpquota/tcpquota.cf";
+    $defaults{domainname}        = "./etc/defaultdomain";
+    $defaults{msql_file}         = "./etc/msql.acl";
+    $defaults{nis_dir}           = "./var/yp";
+    $defaults{user_info_dir}     = "./var/user_info";
+    $defaults{lib_dir}           = "./lib";
+    $defaults{pic_dir}           = "./pics";
+
+    $defaults{homes_dir}         = "./home";
+    $defaults{passwd_file}       = "./etc/passwd";
+    $defaults{shadow_passwd}     = "./etc/shadow";
+    $defaults{shadow_group}      = "./etc/gshadow";
+    $defaults{group_file}        = "./etc/group";
+    $defaults{deact_usr_dir}     = "./var/spool/removed_dirs";
+} else {
+    # Live defaults...
+
+    $defaults{fstab}             = "/etc/fstab";
+    $defaults{shells}            = "/etc/shells";
+    $defaults{tcpquota_lib}      = "/etc/tcpquota/tcpquota.cf";
+    $defaults{domainname}        = "/etc/defaultdomain";
+    $defaults{msql_file}         = "/etc/msql.acl";
+    $defaults{nis_dir}           = "/var/yp";
+    $defaults{user_info_dir}     = "/var/user_info";
+    $defaults{lib_dir}           = "/usr/lib/xadmin";
+    $defaults{pic_dir}           = "/usr/lib/xadmin/pics";
+
+    $defaults{homes_dir}         = "/home";
+    $defaults{passwd_file}       = "/etc/passwd";
+    $defaults{shadow_passwd}     = "/etc/shadow";
+    $defaults{shadow_group}      = "/etc/gshadow";
+    $defaults{group_file}        = "/etc/group";
+    $defaults{deact_usr_dir}     = "/var/spool/removed_dirs";
+}
+$defaults{tar_prg}               = "/bin/tar czPf";
+$defaults{untar_prg}             = "/bin/tar xzPf";
+$defaults{quota_prg}             = "/usr/sbin/repquota";
+$defaults{lpr_prg}               = "/usr/bin/lpr";
+$defaults{output_file}           = "/tmp/xedit.output";
+
+# Some shadow defaults...
+$defaults{shad_change}           = 9864;
+$defaults{shad_allowed}          = "";
+$defaults{shad_required}         = 99999;
+$defaults{shad_warn}             = "";
+$defaults{shad_inactive}         = "";
+$defaults{shad_expired}          = "";
+
+# Some boolean defaults...
+#$defaults{user_groups}          = "yes";
+$defaults{shadow}                = "no";
+$defaults{keep_nis_at_end}       = "yes";
+$defaults{homes_type}            = "group";
+$defaults{group_name}            = "users";
+$defaults{bad_names}             = "no";
+$defaults{allow_empty_passwords} = "no";
+$defaults{confirm_removal}       = 'yes';
+$defaults{group_same_as_user}    = 'no';
+$defaults{start_uid_from_gid}    = 'no';
+$defaults{add_user_in_uid_order} = 'yes';
+$defaults{use_default_shadow}    = 'yes';
+$defaults{use_default_quota}     = 'yes';
+
+# Some boolean NIS/YP defaults...
+$defaults{remove_from_nis}       = 'yes';
+$defaults{show_exists_db}        = 'yes';
+$defaults{use_only_nis}          = 'no';
+$defaults{push_nis_db}           = 'no';
+
+# Some display defaults...
+$defaults{display_quota}         = 'no';
+$defaults{display_name}          = 'yes';
+$defaults{display_passwd}        = 'yes';
+$defaults{display_uid}           = 'yes';
+$defaults{display_gid}           = 'yes';
+$defaults{display_group}         = 'yes';
+$defaults{display_full}          = 'yes';
+$defaults{display_home}          = 'no';
+$defaults{display_shell}         = 'no';
+$defaults{display_members}       = 'yes';
+$defaults{display_type_passwd}   = 'descriptive';
+$defaults{display_type_group}    = 'name';
+
+$HOME = $ENV{'HOME'};
+$conf_checked  = 0;              # We have not checked the config...
+$files_loaded  = 0;              # We have not loaded the files...
+$disallow_user = 1;              # As default, deny the new user TCP quota...
+
+$VERSION =  '$Revision: 1.49 $ ';
+$VERSION =~ s/\$//g;
+$VERSION =~ s/\ //g;
+$VERSION =~ s/Revision://;
+
+# No servicable parts below...
+# ----------------------------
+
+# Are we running in a X enviroment?
+# (Check if we have a DISPLAY variable)
+if( $ENV{'DISPLAY'} ) {
+    # Load the utilities library...
+    require "$defaults{lib_dir}/xadmin.pl";
+#   $drop_down_icon = "$defaults{pic_dir}/dropdown";
+
+    if($debian_guidelines) {
+	require "$defaults{lib_dir}/xadmin_save_debian.pl";
+    } else {
+	require "$defaults{lib_dir}/xadmin_save_turbo.pl";
+    }
+
+    # Check the config file...
+    if(! $conf_checked ) {
+	$conf_checked = 1;
+
+	%config = &get_config(%defaults);
+    }
+
+    # =======================================================================
+
+    # Should we support shadow passwd's?
+    &check_shadow();
+
+    # Should we support NIS/YP?
+    &check_nis();
+
+    # Should we support quota?
+    &check_quota();
+
+    # Should we support TCPQuota?
+    if( $check_tcpquota ) {
+	&check_tcp();
+    }
+
+    # =======================================================================
+
+    if( $config{main_func} eq 'users' ) {
+	&main_users();
+    } elsif( $config{main_func} eq 'groups' ) {
+	&main_groups();
+    } elsif( $config{main_func} eq 'quotas' ) {
+	&main_quotas();
+    }
+
+    MainLoop;
+} else {
+    printf("Not running in a X enviroment...\n");
+    exit 1;
+}
+
+# ----------------------
+# proc: main_users( void )
+# desc: This is the main USERS routine...
+sub main_users {
+    my($scroll, $entry, $users_top, $users_middle, $users_bottom);
+
+    printf("Calling main_users(void)...\n") if( $DEBUG );
+
+    $config{main_func} = 'users';
+
+    if(! Exists($main_window_users) ) {
+	$main_window = "";
+
+	# Create the main users window...
+	$main_window_users = MainWindow->new;
+	$main_window = $main_window_users;
+
+	# Configure the Main window...
+	$main_window->title("XEdit-Users (v$VERSION)");
+	$main_window->iconname('xedit-users');
+	$main_window->ConfigSpecs(-resizeable => ['ACTIVE',undef,undef,1]);
+
+	# Kill the main groups and quota window...
+	$main_window_groups->destroy if( Exists($main_window_groups) );
+	$main_window_quota->destroy if( Exists($main_window_quota) );
+	undef($main_window_groups); undef($main_window_quota);
+
+	# Create some frames...
+	$users_top    = $main_window->Frame;
+	$users_middle = $main_window->Frame;
+	$users_bottom = $main_window->Frame(-relief => 'groove', -bd => 2);
+	(@pl) = (-side   => 'top',
+		 -expand => 'yes',
+		 -padx   => 10,
+		 -pady   => 1,
+		 -fill   => 'both'
+	);
+	$users_top->pack(@pl,    -expand => 'no');
+	$users_middle->pack(@pl);
+	$users_bottom->pack(@pl, -expand => 'no');
+
+	# Create the menu...
+	&main_menu($users_top);
+
+	# Create the Main buttons...
+	&main_buttons($users_bottom, 'user');
+
+	$user_listbox = $users_middle->Listbox(-setgrid => 1,
+					       -height  => 15,
+					       -width   => $win_size,
+					       -font    => 'fixed'
+	);
+	$scroll = $users_middle->Scrollbar(-command     => [$user_listbox => 'yview']);
+	$user_listbox->configure(-yscrollcommand        => [$scroll => 'set']);
+	$scroll->pack(-side => 'right', -fill => 'y');
+	$user_listbox->pack(-fill => 'both', -expand => 'yes');
+	$user_listbox->bind('<Double-Button-1>' => sub{&get_list_entry('user', $user_listbox)});
+    }
+
+    # =======================================================================
+
+    undef( $wait_box );
+    $wait_box = $main_window_users->WaitBox(-title         => 'Takes forever to get service around here',
+					    -cancelroutine => sub {
+						print "\nI'm canceling....\n";
+						$wait_box->unShow;
+					    })->Show;
+
+    # Output a little dialog saying what we are doing...
+    $wait_box->configure(-txt1 => "Starting xAdmin/USERS, by turbo\@tripnet.se");
+    &wait_box('Starting up, please wait...');
+
+    # Load all the files we need
+    &load_files() if(! $files_loaded);
+
+    # =======================================================================
+
+    # Only sort the entries if nessesary...
+    if( $config{sort_by} ne 'nosort' ) {
+	&wait_box('Sorting list, please wait...');
+	&sort_list( 'passwd' );
+    }
+
+    &wait_box('Creating user listbox, please wait...');
+
+    printf("Creating listboxes...\n=====================\n") if($DEBUG);
+
+    # Insert the header...
+    &listbox_user_header($user_listbox);
+
+    # Read in the user/group data to the text widget...
+    &listbox_user($user_listbox);
+
+    # Close the wait box...
+    printf("=====================\nDone creating listboxes...\n\n") if($DEBUG);
+    $wait_box->unShow;
+}
+
+# ----------------------
+# proc: main_groups( void )
+# desc: This is the main GROUPS routine...
+sub main_groups {
+    printf("Calling main_groups(void)...\n") if( $DEBUG );
+
+    # We should not support NIS here yet...
+    $nis_support = "no";
+
+    $config{main_func} = 'groups';
+
+    # Clear some 'main_users()' variables...
+    &clear_variables();
+
+    if(! Exists($main_window_groups) ) {
+	$main_window = "";
+
+	# Create the main window...
+	$main_window_groups = MainWindow->new;
+	$main_window = $main_window_groups;
+
+	# Configure the Main window...
+	$main_window->title("XEdit-Groups (v$VERSION)");
+	$main_window->iconname('xedit-groups');
+	$main_window->ConfigSpecs(-resizeable => ['ACTIVE',undef,undef,1]);
+
+	# Kill the main users and quota window...
+	$main_window_users->destroy if( Exists($main_window_users) );
+	$main_window_quota->destroy if( Exists($main_window_quota) );
+	undef($main_window_users); undef($main_window_quota);
+
+	# Create some frames...
+	$groups_top    = $main_window->Frame;
+	$groups_middle = $main_window->Frame;
+	$groups_bottom = $main_window->Frame(-relief => 'groove', -bd => 2);
+	(@pl) = (-side   => 'top',
+		 -expand => 'yes',
+		 -padx   => 10,
+		 -pady   => 1,
+		 -fill   => 'both'
+	);
+	$groups_top->pack(@pl,    -expand => 'no');
+	$groups_middle->pack(@pl);
+	$groups_bottom->pack(@pl, -expand => 'no');
+
+	# Create the menu...
+	&main_menu($groups_top);
+
+	# Create the Main buttons...
+	&main_buttons($groups_bottom, 'group');
+
+	$group_listbox = $groups_middle->Listbox(-setgrid => 1,
+						 -height  => 15,
+						 -width   => $win_size,
+						 -font    => 'fixed'
+	);
+	$scroll = $groups_middle->Scrollbar(-command      => [$group_listbox => 'yview']);
+	$group_listbox->configure(-yscrollcommand         => [$scroll => 'set']);
+	$scroll->pack(-side => 'right', -fill => 'y');
+	$group_listbox->pack(-fill => 'both', -expand => 'yes');
+	$group_listbox->bind('<Double-Button-1>' => sub{&get_list_entry('group', $group_listbox)});
+    }
+
+    # =======================================================================
+
+    undef( $wait_box );
+    $wait_box = $main_window_groups->WaitBox(-title         => 'Takes forever to get service around here',
+					     -cancelroutine => sub {
+						 print "\nI'm canceling....\n";
+						 $wait_box->unShow;
+					     })->Show;
+
+    # Output a little dialog saying what we are doing...
+    $wait_box->configure(-txt1 => "Starting xAdmin/GROUPS, by turbo\@tripnet.se");
+    &wait_box('Starting up, please wait...');
+
+    # Load all the files we need
+    &load_files() if(! $files_loaded);
+
+    # =======================================================================
+
+    # Only sort the entries if nessesary...
+#    if( $config{sort_by} ne 'nosort' ) {
+#	&wait_box('Sorting list, please wait...');
+#	&sort_list( 'group' );
+#    }
+
+    &wait_box('Creating group listbox, please wait...');
+
+    # Insert the header...
+    &listbox_group_header($group_listbox);
+
+    # Read in the user/group data to the text widget...
+    &listbox_group($group_listbox);
+
+    # Close the wait box...
+    $wait_box->unShow;
+}
+
+# ----------------------
+# proc: main_quotas( void )
+# desc: This is the main QUOTAS routine...
+sub main_quotas {
+    printf("Calling main_quotas(void)...\n") if( $DEBUG );
+
+    $config{main_func} = 'quotas';
+
+    if(! Exists($main_window_quota) ) {
+	if( $user_name ) {
+	    # Create the main window...
+	    $main_window_quota = $main_window_users->Toplevel;
+	} else {
+	    # Kill the main users window...
+	    $main_window_users->destroy if( Exists($main_window_users) );
+	    $main_window_groups->destroy if( Exists($main_window_groups) );
+	    undef($main_window_users); undef($main_window_groups);
+
+	    # Create the main window...
+	    $main_window_quota = MainWindow->new;
+	}
+
+	# Configure the Main window...
+	$main_window_quota->title("XEdit-Quota (v$VERSION)");
+	$main_window_quota->iconname('xedit-quota');
+	$main_window_quota->ConfigSpecs(-resizeable => ['ACTIVE',undef,undef,1]);
+
+	$main_window = $main_window_quota;
+
+	# Create the menu...
+	&main_menu($main_window);
+
+	# Create some frames...
+	$quota_top     = $main_window->Frame;
+	$quota_middle1 = $main_window->Frame;
+	$quota_middle2 = $main_window->Frame;
+	$quota_bottom  = $main_window->Frame(-relief => 'groove', -bd => 2);
+	(@pl) = (-side   => 'top',
+		 -expand => 'yes',
+		 -padx   => 10,
+		 -pady   => 1,
+		 -fill   => 'both'
+	);
+	$quota_top->pack(@pl);
+	$quota_middle1->pack(@pl);
+	$quota_middle2->pack(@pl);
+	$quota_bottom->pack(@pl);
+
+	# Create the Main buttons...
+	&main_buttons($quota_bottom, 'quota');
+
+	if( $user_name ) {
+	    $quota_middle1->Label(-text => "Edit quota for $user_name on what FS?")->pack(-side => 'top', -anchor => 'n');
+	} else {
+	    $quota_middle1->Label(-text => 'Check quota on what FS?')->pack(-side => 'top', -anchor => 'n');
+	}
+
+	$button = $quota_middle2->Frame;
+	$button->pack(-side   => 'top', 
+		      -expand => 1,
+		      -fill   => 'x',
+		      -padx   => '.5c'
+	);
+
+	$i = 0;
+	do {
+	    if( $quota_line{$i} ) {
+		if( $user_name ) {
+		    $button->Button(-text      => $quota_line{$i},
+				    -command   => [\&edit_quota, $quota_line{$i}],
+				    -underline => 5
+		    )->pack(-side => 'left');
+		} else {
+		    $button->Button(-text      => $quota_line{$i},
+				    -command   => [\&show_quota, $quota_line{$i}],
+				    -underline => 5
+		    )->pack(-side => 'left');
+		}
+
+		$i++;
+		$QUOTA_CONT = 1;
+	    } else {
+		$QUOTA_CONT = 0;
+	    }
+	} while( $QUOTA_CONT );
+    }
+}
+
+# ----------------------
+# proc: add_user( window )
+# desc: Add a new user
+sub add_user {
+    # window - Window to use as base for error dialog...
+    local($window) = @_;
+    my($ok, $cancel) = ('Ok', 'Oopps');
+    my($dialog, $button);
+
+    printf("Calling add_user($window)...\n") if( $DEBUG );
+
+    # Default, we should not put a error dialog...
+    $error_dialog = 0;
+
+    # Create the error dialog, just in case...
+    $dialog = $window->Dialog(-bitmap         => 'error',
+			      -default_button => $cancel,
+			      -buttons        => [$cancel]
+    );
+
+    # Do some more error checks...
+    if( $user_name eq "" ) {
+	# No username specified...
+	$dialog->configure(-text => 'You did not specify a login name...');
+
+	$error_dialog = 1;
+    } elsif( get_user_name($user_name) == 1 ) {
+	# User already exist...
+	$dialog->configure(-text => "The user \`$user_name\' already exists...");
+    } elsif( length($user_name) > 8 ) {
+	$dialog->configure(-text => 'The user name must be less than 9 characters...');
+
+	$error_dialog = 1;
+    } elsif( $user_name !~ /^[A-Za-z_][-_A-Za-z0-9]*$/ ) {
+	# The username consists of bogus character/-s..
+	$dialog->configure(-text => 'To avoid problems, please enter a username consisting of international lowercase letters and/or numbers...');
+
+	$error_dialog = 1;
+    } elsif( $user_name !~ /^[a-z][a-z0-9]+$/ && ($config{bad_names} eq 'no' || $config{bad_names} eq 0)) {
+	# The username starts with a bogus character...
+	$dialog->configure(-text => 'Please enter a username consisting of a lowercase letter followed by one or more lowercase letters or numbers. If you wish to use a name with underscores, dashes, or uppercase characters, please tick the \'Allow bad names\'...');
+
+	$error_dialog = 1;
+    } elsif( ! $crypted_password && $config{allow_empty_passwords} eq "no" ) {
+	# We do not have a password...
+	&change_password($user_name, 'user', 'add');
+    } elsif( $user_id eq "" ) {
+	# No user id specified...
+	$dialog->configure(-text => 'You did not specify a user id...');
+
+	$error_dialog = 1;
+    } elsif( &get_user_name($user_name) == 2 ) {
+	# User ID already exist...
+	$dialog->configure(-text => "The user id \`$user_id\' already exists...");
+    } elsif( $user_id =~ /[A-Za-z]/ ) {
+	# The user id contains other characters than numbers...
+	$dialog->configure(-text => 'The user id must contain numbers (0 through 9) only!');
+
+	$error_dialog = 1;
+    } elsif( $primary_group eq "" ) {
+	# No group specified...
+	$dialog->configure(-text => 'You did not specify a primary group...');
+
+	$error_dialog = 1;
+    } elsif( $primary_group !~ /^[A-Za-z_][-_A-Za-z0-9]*$/ ) {
+	# The groupname consists of bogus character/-s..
+	$dialog->configure(-text => 'To avoid problems, please enter a groupname consisting of international lowercase letters and/or numbers...');
+
+	$error_dialog = 1;
+    } elsif( $primary_group !~ /^[a-z][a-z0-9]+$/ && ($config{bad_names} eq 'no' || $config{bad_names} eq 0)) {
+	# The username starts with a bogus character...
+	$dialog->configure(-text => 'Please enter a groupname consisting of a lowercase letter followed by one or more lowercase letters or numbers. If you wish to use a name with underscores, dashes, or uppercase characters, please tick the \'Allow bad names\'...');
+
+	$error_dialog = 1;
+    } elsif( $home_dir eq "" ) {
+	# No home directory specified...
+	$dialog->configure(-text => 'You did not specify a home directory...');
+
+	$error_dialog = 1;
+    } elsif( $login_shell eq "" ) {
+	# No login shell specified...
+	$dialog->configure(-text => 'You did not specify a login shell...');
+
+	$error_dialog = 1;
+    } else {
+	# Everything looks okay...
+
+	# Fall back if the variable '$user_info' is empty, perl just don't like that (hrmf!)
+	if(! $user_info ) {
+	    $user_info = "New user without a name";
+	}
+
+	# Should the GID/groupname be the same as the UID/username?
+	if( (($config{group_same_as_user} eq 'yes') || ($config{group_same_as_user} eq 1)) && ($user_name eq $primary_group) ) {
+	    # Temporarily use these values, if we change our minds, it is easy just delete the variable...
+	    $primary_group    = $user_name;
+	    $primary_group_id = $user_id;
+	} else {
+	    # Find the GID for the group $primary_group...
+	    $primary_group_id = &get_group_id( $primary_group );
+	}
+
+	# Check for confirmation...
+	my($ok, $cancel) = ('Add', 'Oopps');
+	$dialog = $window->Dialog(-bitmap         => 'question',
+				  -default_button => $ok,
+				  -wraplength     => '15i',
+				  -buttons        => [$ok, $cancel]
+	);
+
+	$dialog->configure(-text => "\tAdd user?\n\nLogin name:\t$user_name\nUser ID:\t\t$user_id\nFull name:\t$user_info\nPrimary group:\t$primary_group ($primary_group_id)\nHome dir:\t$home_dir\nLogin shell:\t$login_shell\n");
+	$button = $dialog->Show;
+
+	# Check if it is okay to add the user...
+	if( $button eq $ok ) {
+	    # Close the add user window...
+	    $edit_user_window->destroy;
+	    undef($edit_user_window);
+
+	    # Show the wait box again...
+	    $wait_box->Show;
+	    $wait_box->configure(-txt1 => '');
+
+	    # If we allow empty passwords and the password is empty, keep perl happy... (sigh)
+	    if( $config{allow_empty_passwords} eq 'yes' && (! $crypted_password) ) {
+		$crypted_password = "";
+	    }
+
+	    # Should we create a group for this user?
+	    if( (($config{group_same_as_user} eq 'yes') || ($config{group_same_as_user} eq 1)) && ($user_name eq $primary_group) ) {
+		# Create the group...
+		&wait_box('Saving the group database...');
+		&save_group_file($user_name, 'add');
+	    }
+
+	    # Should we only use NIS/YP, or should we care about the /etc/passwd file?
+	    if( ($config{use_only_nis} eq 'no') || ($config{use_only_nis} eq '0') ) {
+		# Now, add the user the the passwd file...
+		&wait_box('Saving the user database...');
+		&save_passwd_file($user_name, $window, 'add');
+	    }
+
+	    if( $user_id ) {
+		# Remember the UID's...
+		push( @UIDS, $user_id );
+	    }
+
+	    # Update the NIS/YP entry to?
+	    if( ($nis_support eq 'master') && (($config{remove_from_nis} eq 'yes') || $config{remove_from_nis} == 1) ) {
+		$i = 0;
+		while( $passwd_line{$i} ) {
+		    if( $user_name eq (split(':', $passwd_line{$i}))[0] ) {
+			$line = $passwd_line{$i};
+		    }
+
+		    $i++;
+		}
+
+		&save_nis($line, 'new') if( $line );
+	    }
+
+	    # Save the TCP quota...
+	    if( $quota_support eq 'yes' ) {
+		&wait_box('Saving the TCPQuota database...');
+		&save_tcp_quota($user_name, $tcp_quota_new );
+	    }
+
+	    # Create the home directory...
+	    &wait_box('Creating the users homedirectory...');
+	    &create_homedir($main_window, $home_dir);
+
+	    # If we have quota, set the new users quota entries...
+	    if( $quota_support eq 'yes' ) {
+		&wait_box('Saving the users disk quota...');
+
+		printf("  Quota:         Yes\n") if( $DEBUG );
+		&save_file_quota();
+	    } else {
+		printf("  Quota:         No\n") if( $DEBUG );
+	    }
+
+	    # Zero out the user...
+	    $user_name        = "";
+	    $crypted_password = "";
+	    $user_id          = "";
+	    $user_info        = "";
+	    $home_dir         = "";
+	    $login_shell      = "";
+	    $add_to_group     = 0;
+	}
+    }
+
+    # Remove the wait box...
+    $wait_box->unShow;
+
+    # Should we put up the error dialog?
+    if( $error_dialog ) {
+	$button = $dialog->Show;
+    }
+}
+
+# ----------------------
+# proc: add_group( window )
+# desc: Add a new group
+sub add_group {
+    # window - Window to use as base for error dialog...
+    local($window) = @_;
+    my($ok, $cancel) = ('Ok', 'Oopps');
+    my($error_dialog, $dialog_err, $dialog_ver, $button);
+
+    printf("Calling add_group($window)...\n") if( $DEBUG );
+
+    # Default, we should not put a error dialog...
+    $error_dialog = 0;
+
+    # Create the error dialog, just in case...
+    $dialog_err = $window->Dialog(-bitmap         => 'error',
+				  -default_button => $cancel,
+				  -buttons        => [$cancel]
+    );
+
+    # Do some more error checks...
+    if( $group_name eq "" ) {
+	# No groupname specified...
+	$dialog_err->configure(-text => 'You did not specify a group name...');
+	$dialog_err->Show;
+    } else {
+	# Everything looks okay...
+
+	# Check for confirmation...
+	$dialog_ver = $window->Dialog(-bitmap         => 'question',
+				      -default_button => $ok,
+				      -wraplength     => '15i',
+				      -buttons        => [$ok, $cancel]
+	);
+
+	$dialog_ver->configure(-text => "\tAdd group?\n\nGroup name:\t$group_name\nGroup ID:\t$group_id\nGroup members:\t$group_members\n");
+	$button = $dialog_ver->Show;
+
+	# Check if it is okay to add the user...
+	if( $button eq $ok ) {
+	    # Close the add group window...
+	    $edit_group_window->destroy;
+	    undef($edit_group_window);
+
+	    # Now, add the group the the group file...
+	    &save_group_file($group_name, 'add');
+
+	    if( $group_id ) {
+		# Remember the UID's...
+		push( @GIDS, $group_id );
+	    }
+
+	    # Update the NIS/YP entry to?
+#	    if( ($nis_support eq 'master') && (($config{remove_from_nis} eq 'yes') || $config{remove_from_nis} == 1) ) {
+#		$i = 0;
+#		while( $passwd_line{$i} ) {
+#		    if( $user_name eq (split(':', $passwd_line{$i}))[0] ) {
+#			$line = $passwd_line{$i};
+#		    }
+#
+#		    $i++;
+#		}
+#
+#		&save_nis($line, 'new') if( $line );
+#	    }
+
+	    # Zero out the user...
+	    $group_name       = "";
+	    $crypted_password = "";
+	    $group_id         = "";
+	    $group_members    = "";
+	}
+    }
+}
+
+# ----------------------
+# proc: rem_user( void )
+# desc: Remove the choosen user...
+sub rem_user {
+    my($user_number);
+
+    printf("Calling rem_user(void)...\n") if( $DEBUG );
+
+    # Get number of the choosen line...
+    $user_number = $user_listbox->index('active');
+    $userno      = $user_number - 1;
+
+    # Just make sure we have choosen a user...
+    if(! $userno ) {
+	printf("\n  ERROR: No user selected...\n");
+	return;
+    }
+
+    # Split the user line...
+    ($user_name,$crypted_password,$user_id,$group_id,$user_info,$home_dir,$login_shell) = split(':', $passwd_line{$userno});
+
+    # Show the wait box again...
+    $wait_box->Show;
+    $wait_box->configure(-txt1 => '');
+
+    # Is the GID/groupname likely to be the same as the UID/username?
+    if( (($config{group_same_as_user} eq 'yes') || ($config{group_same_as_user} eq 1)) && ($user_name eq $primary_group) ) {
+	# Should we remove the user from the group-file...
+	&wait_box('Saving the group database...');
+	&save_group_file($user_name, 'rem');
+    }
+
+    # Should we only use NIS/YP, or should we care about the /etc/passwd file?
+    if( ($config{use_only_nis} eq 'no') || ($config{use_only_nis} eq '0') ) {
+	# Save the passwd file...
+	&wait_box('Saving the user database...');
+	&save_passwd_file($user_name, 0, 'rem');
+    }
+
+    # Remove the home directory...
+    &wait_box('Removing the users homedirectory...');
+    &remove_homedir($home_dir) if( ($DEBUG == 0) || ($DEBUG == 2) );
+}
+
+# ----------------------
+# proc: rem_group( void )
+# desc: Remove the choosen group...
+sub rem_group {
+    my($group_number);
+
+    printf("Calling rem_group(void)...\n") if( $DEBUG );
+
+    # Get number of the choosen line...
+    $group_number = $group_listbox->index('active');
+    $groupno      = $group_number - 1;
+
+    # Just make sure we have choosen a user...
+    if(! $groupno ) {
+	printf("\n  ERROR: No group selected...\n");
+	return;
+    }
+
+    # Split the user line...
+    ($group_name,$crypted_password,$group_id,$group_members) = split(':', $group_line{$groupno});
+
+    # Save the group file...
+    save_group_file($group_name, 'rem');
+}
+
+# ----------------------
+# proc: lock_user( void )
+# desc: Lock a user (move the homedir)
+sub lock_user {
+    my($dummy);
+
+    printf("Calling lock_user(void)...\n") if( $DEBUG );
+
+    # Get the whole line...
+    $userno = $user_listbox->index('active') - 1;
+
+    # Just make sure we have choosen a user...
+    if(! $userno ) {
+	printf("  ERROR: No user selected...\n");
+	return;
+    }
+
+    # Split the user line...
+    ($user_name,$crypted_password,$user_id,$primary_group_id,$user_info,$home_dir,$login_shell)=split(':', $passwd_line{$userno});
+
+    # Double check so that the user is not already locked...
+    if( $crypted_password =~ /^\*/ ) {
+	$main_window->Dialog(-text   => "User is already locked\n",
+			     -bitmap => 'error'
+	)->Show;
+	return;
+    }
+
+    # Show the wait box again...
+    $wait_box->Show;
+    $wait_box->configure(-txt1 => '');
+
+    # Archive users home directory, with absolute paths (tar -P)...
+    &wait_box('Saving the users homedirectory...');
+    system("$config{tar_prg} $config{deact_usr_dir}/$user_name.tgz $home_dir");
+
+    # Change mode on the tar file...
+    chmod( 0600, "$config{deact_usr_dir}/$user_name.tgz");
+
+    # Should we only use NIS/YP, or should we care about the /etc/passwd file?
+    if( ($config{use_only_nis} eq 'no') || ($config{use_only_nis} eq '0') ) {
+	# Save the passwd file...
+	&wait_box('Saving the user database...');
+	&save_passwd_file($user_name, 0, 'lock');
+    }
+
+    # Remove the home directory...
+    &wait_box('Removing the users homedirectory...');
+    &remove_homedir($home_dir) if( ($DEBUG == 0) || ($DEBUG == 2) );
+
+    # Remove the wait box...
+    $wait_box->unShow;
+}
+
+# ----------------------
+# proc: unlock_user( void )
+# desc: Unlock a user (move the homedir back)
+sub unlock_user {
+    my($dummy);
+
+    printf("Calling unlock_user(void)...\n") if( $DEBUG );
+
+    # Get the whole line...
+    $userno = $user_listbox->index('active') - 1;
+
+    # Just make sure we have choosen a user...
+    if(! $userno ) {
+	printf("\n  ERROR: No user selected...\n");
+	return;
+    }
+
+    # Split the user line...
+    ($user_name,$crypted_password,$user_id,$primary_group_id,$user_info,$home_dir,$login_shell) = split(':', $passwd_line{$userno});
+
+    # Double check so that the user is really locked...
+    if( $crypted_password !~ /^\*/ ) {
+	printf("  ERROR: User is not locked...\n");
+	return;
+    }
+
+    # Show the wait box again...
+    $wait_box->Show;
+    $wait_box->configure(-txt1 => '');
+
+    # Unpack the user directory...
+    &wait_box('Restoring the users homedirectory...');
+    system("$config{untar_prg} $config{deact_usr_dir}/$user_name.tgz");
+
+    # Delete the archive...
+    unlink("$config{deact_usr_dir}/$user_name.tgz");
+
+    # Should we only use NIS/YP, or should we care about the /etc/passwd file?
+    if( ($config{use_only_nis} eq 'no') || ($config{use_only_nis} eq '0') ) {
+	# Save the passwd file...
+	&wait_box('Saving the user database...');
+	&save_passwd_file($user_name, 0, 'unlock');
+    }
+
+    # Remove the wait box...
+    $wait_box->unShow;
+}
+
+# ----------------------
+# proc: edit_user( user_number, action )
+# desc: Edit a user...
+sub edit_user {
+    # user_number - Listbox number of user to change...
+    # action      - What action to preform...
+    #               add
+    #               rem
+    #               edit
+    local($user_number, $action) = @_;
+    my($i, $f, $e, $l, $temp, $scroll);
+
+    printf("Calling edit_user($user_number, $action)...\n") if( $DEBUG );
+
+    # Save it for later...
+    if( $action eq 'add' ) {
+	$userno  = $number_of_users;
+    } else {
+	$userno  = $user_number;
+    }
+
+    if(! Exists($edit_user_window) ) {
+	# Create the window...
+	$edit_user_window = $main_window_users->Toplevel;
+
+	# -------
+
+	if( $action eq 'edit' ) {
+	    # Split the user line...
+	    ($user_name,$crypted_password,$user_id,$primary_group_id,$user_info,$home_dir,$login_shell)=split(':', $passwd_line{$userno});
+
+	    # Find the group name associated with the group id...
+	    $primary_group = &get_group_name($primary_group_id);
+
+	    # Configure the window...
+	    $edit_user_window->title("Edit user $user_name");
+	    $edit_user_window->iconname("Edit $user_name");
+
+	    # Create the Main buttons...
+	    &main_buttons($edit_user_window, 'edit_user');
+
+	    # We should not remove a user from any groups...
+	    $rem_from_group   = 0;
+
+	    # No secondary groups...
+	    $secondary        = 0;
+	    %secondary_groups = ();
+	} elsif( $action eq 'add' ) {
+	    # Configure the window...
+	    $edit_user_window->title("Add new user");
+	    $edit_user_window->iconname('add user');
+
+	    if(! $DEBUG) {
+		# Clear some user variables...
+		$user_name        = "";
+		$primary_group    = "";
+		$user_id          = "";
+		$crypted_password = "";
+		$user_info        = "";
+		$home_dir         = "";
+		$login_shell      = "";
+	    } else {
+		# Set some default values...
+		$user_name        = "dumbo";
+		$primary_group    = "dumbo";
+		$user_id          = "1004";
+		$crypted_password = "‹BvljAIDJlmY";
+		$user_info        = "Some test user";
+		$home_dir         = "/home/guests/dumbo";
+		$login_shell      = "/bin/false";
+	    }
+
+	    # Misc other variables that should be cleared...
+	    $add_to_group     = 0;
+	    $rem_from_group   = 0;
+
+	    # No secondary groups...
+	    $secondary        = 0;
+	    %secondary_groups = ();
+
+	    $tcp_quota{$userno} = "";
+	    $tcp_quota_allowed{$userno} = "Y";   # As default, allow user TCPQuota
+
+	    # Create the Main buttons...
+	    &main_buttons($edit_user_window, 'add_user');
+	}
+
+	# -------
+
+	@pl1 = (-side   => 'left',
+		-expand => 'yes',
+		-fill   => 'both',
+		-pady   => '2'
+	);
+	@pl2 = (-side   => 'top',
+		-expand => 'yes',
+		-fill   => 'both',
+		-pady   => '2'
+	);
+
+	# -------
+
+	# Create two vertical frames...
+	$eduser_top    = $edit_user_window->Frame;
+	$eduser_bottom = $edit_user_window->Frame;
+	$eduser_top->pack(@pl2);
+	$eduser_bottom->pack(@pl2);
+
+	# Create three horizontal frames...
+	$eduser_left   = $eduser_bottom->Frame;
+	$eduser_middle = $eduser_bottom->Frame;
+	$eduser_left->pack(@pl1);
+	$eduser_middle->pack(@pl1);
+
+	# ===== M E N U B U T T O N S =====
+
+	$eduser_menu_frame = $eduser_top->Frame(-relief => 'raised', -borderwidth => 2);
+	$eduser_menu_frame->pack(-fill => 'x');
+
+	# Create the first menu button...
+	$expand_shadow = $eduser_menu_frame->Button(-text => 'Expand/Unexpand Shadow', -relief => 'raised', -command => sub{
+	    # Remove the quota values inputs...
+	    if( $eduser_quota ) {
+		$eduser_right->destroy;
+		undef($eduser_right);
+
+		$eduser_quota = 0;
+	    }
+
+	    if( $eduser_shadow ) {
+		$eduser_right->destroy;
+		undef($eduser_right);
+
+		$eduser_shadow = 0;
+	    } else {
+		# Pack the right frame...
+		$eduser_right  = $eduser_bottom->Frame;
+		$eduser_right->pack(@pl1);
+
+		# Create the frame...
+		&edit_shadow_values($eduser_right);
+	    }
+	})->pack(-side => 'left');
+
+	# Create the second menu button...
+	$expand_quota = $eduser_menu_frame->Button(-text => 'Expand/Unexpand Quota', -relief => 'raised', -command => sub{
+	    # Remove the quota values inputs...
+	    if( $eduser_shadow ) {
+		$eduser_right->destroy;
+		undef($eduser_right);
+
+		$eduser_shadow = 0;
+	    }
+
+	    if( $eduser_quota ) {
+		$eduser_right->destroy;
+		undef($eduser_right);
+
+		$eduser_quota = 0;
+	    } else {
+		# Pack the right frame...
+		$eduser_right = $eduser_bottom->Frame;
+		$eduser_right->pack(@pl1);
+
+		# Create the frame...
+		&edit_quota_values($eduser_right);
+	    }
+	})->pack(-side => 'left');
+
+	if( (! $DEBUG) && ($config{shadow} eq 'no' || $config{shadow} eq 0) ) { $expand_shadow->configure(-state => 'disabled');}
+	if( (! $DEBUG) && ($quota_support  eq 'no' || $quota_support  eq 0) ) { $expand_quota->configure( -state => 'disabled');}
+
+	# ===== S E C O N D A R Y  G R O U P S  F R A M E =====
+
+	# Create the 'Secondary groups' frame...
+	$eduser_middle->Label(-text => 'Secondary groups')->pack(-side => 'top', -anchor => 'n');
+	$secondary_groups_listbox = $eduser_middle->Listbox(-setgrid => 1,
+							    -height  => 15,
+							    -font    => 'fixed'
+	);
+	$scroll = $eduser_middle->Scrollbar(-command  => [$secondary_groups_listbox => 'yview']);
+	$secondary_groups_listbox->configure(-yscrollcommand => [$scroll => 'set']);
+	$scroll->pack(-side => 'right', -fill => 'y');
+	$secondary_groups_listbox->pack(-fill => 'both', -expand => 'yes');
+	$secondary_groups_listbox->bind('<Double-Button-1>' => sub{
+	    &get_list_entry('secondary_group_rem', $secondary_groups_listbox);
+	});
+
+	$eduser_group_input = $eduser_middle->Entry(-textvariable => \$temp_secondary_group, -relief => 'sunken');
+	$eduser_group_input->bind('<Return>' => sub{
+	    $secondary_groups{$secondary} = "$user_name:$temp_secondary_group";
+	    printf("  New secondary group: $secondary_groups{$secondary}\n") if( $DEBUG );
+
+	    $secondary++;
+	    $add_to_group = 1;
+
+	    $secondary_groups_listbox->insert('end', $temp_secondary_group);
+	    undef $temp_secondary_group;
+	});
+	$eduser_group_input->pack(-fill => 'x');
+
+	# Create the 'Add/Rem' buttons...
+	$eduser_middle->Button(-text => 'Add', -command => [\&choose_group, 'secondary_group_add'])->pack(-side => 'left', -fill => 'x');
+	$eduser_middle->Button(-text => 'Rem', -command => sub{
+	    &get_list_entry('secondary_group_rem', $secondary_groups_listbox);
+	})->pack(-side => 'right', -fill => 'x');
+
+	if( $action eq 'edit' ) {
+	    # Fill the listbox with meaning full values...
+	    &get_secondary_groups( $user_name );
+	}
+
+	# ===== I N P U T  G A D G E T S =====
+
+	# Prepare the Input gadgets...
+	$eduser_left->Label(-text => 'User values')->pack(-side => 'top', -anchor => 'n');
+	$eduser_inputs = $eduser_left->Frame;
+	$eduser_inputs->pack(@pl1);
+
+	# Create the Input buttons...
+	foreach $i (0, 1, 2, 3, 4, 5, 6, 7) {
+	    $eduser_f{$i} = $eduser_inputs->Frame(-bd => 1);
+
+	    $eduser_l{$i} = $eduser_f{$i}->Label();
+	    $eduser_e{$i} = $eduser_f{$i}->Entry(-relief => 'sunken', -width => 20);
+
+	    if( $i == 7 && ($config{display_quota} eq 'no' || $config{display_quota} eq '0') ) {
+		# Break the for loop here, before we pack the last input gadget...
+		next;
+	    }
+
+	    $eduser_f{$i}->pack(-side => 'top', -fill => 'x');
+	    $eduser_e{$i}->pack(-side => 'right');
+
+	    if( $i == 7 && ($config{display_quota} eq 'yes' || $config{display_quota} eq 1) ) {
+		# Put the current TCPQuota value just to the left of the input gadget...
+		if( $tcp_quota{$userno} ) {
+		    $eduser_f{$i}->Label(-text => "$tcp_quota{$userno} $cf{'MONEY_VALUE'}")->pack(-side => 'right');
+		} else {
+		    $eduser_f{$i}->Label(-text => "0 $cf{'MONEY_VALUE'}")->pack(-side => 'right');
+		}
+	    }
+
+	    $eduser_l{$i}->pack(-side => 'left');
+
+	    $eduser_e{$i}->focus if $i == 0;
+	}
+
+	if( $action eq 'add' ) {
+	    if( $config{shadow} eq 'yes' || $config{shadow} eq 1 ) {
+		# Create the checkbutton, 'Use default shadow values'...
+		$eduser_inputs->Checkbutton(-text => 'Use default shadow values', -command => sub{
+		    $shadow_value{0} = $config{shad_change};
+		    $shadow_value{1} = $config{shad_allowed};
+		    $shadow_value{2} = $config{shad_required};
+		    $shadow_value{3} = $config{shad_warn};
+		    $shadow_value{4} = $config{shad_inactive};
+		    $shadow_value{5} = $config{shad_expired};
+		}, -variable => \$config{use_default_shadow})->pack(-side => 'top', -anchor => 'w');
+	    }
+
+	    # Create the checkbutton, 'Use default quota values'...
+	    $eduser_inputs->Checkbutton(-text => 'Use default file quota values', -command => sub{
+		$quota_value{0} = "";
+		$quota_value{1} = "";
+		$quota_value{2} = "";
+		$quota_value{3} = "";
+		$quota_value{4} = "";
+		$quota_value{5} = "";
+		$quota_value{6} = "";
+		$quota_value{7} = "";
+	    }, -variable => \$config{use_default_quota})->pack(-side => 'top', -anchor => 'w');
+	}
+
+	if( $config{display_quota} eq 'yes' || $config{display_quota} eq 1 ) {
+	    if( $tcp_quota_allowed{$userno} eq 'N' ) {
+		$disallow_user = 1;
+	    } else {
+		$disallow_user = 0;
+	    }
+
+	    # Create the checkbutton, 'Allow/Disallow user TCP quota'...
+	    $eduser_inputs->Checkbutton(-text => 'Disallow user TCP quota', -variable => \$disallow_user, -command => sub{
+		if( $disallow_user ) {
+		    $tcp_quota_new = "";
+		    $eduser_e{7}->configure(-state => 'disabled');
+
+		    # Focus on the login name entry...
+		    $eduser_e{0}->focus;
+		} else {
+		    $eduser_e{7}->configure(-state => 'normal');
+		}
+	    })->pack(-side => 'top', -anchor => 'w');
+	}
+
+	# Create the checkbutton, 'Allow/Disallow empty passwd'...
+	$overide_empty = $eduser_inputs->Checkbutton(-text => 'Override, allow empty passwd', -variable => \$allow_empty, -command => sub{
+	    &tick_override($crypted_password);
+	})->pack(-side => 'top', -anchor => 'w');
+
+	# Configure the Input gadgets...
+	$eduser_l{0}->configure(-text => 'Username:');
+	$eduser_l{1}->configure(-text => 'Password:');
+	$eduser_l{2}->configure(-text => 'Primary group:');
+	$eduser_l{3}->configure(-text => 'User ID:');
+	$eduser_l{4}->configure(-text => 'Full name:');
+	$eduser_l{5}->configure(-text => 'Home directory:');
+	$eduser_l{6}->configure(-text => 'Login shell:');
+	if( (($config{display_quota} eq 'yes') || ($config{display_quota} eq 1)) && $check_tcpquota ) {
+	    $eduser_l{7}->configure(-text => 'TCP Quota:');
+	}
+
+	$eduser_e{0}->configure(-textvariable => \$user_name);
+	$eduser_e{1}->configure(-textvariable => \$crypted_password);
+	$eduser_e{2}->configure(-textvariable => \$primary_group);
+	$eduser_e{3}->configure(-textvariable => \$user_id);
+	$eduser_e{4}->configure(-textvariable => \$user_info);
+	$eduser_e{5}->configure(-textvariable => \$home_dir);
+	$eduser_e{6}->configure(-textvariable => \$login_shell);
+	if( $config{display_quota} eq 'yes' || $config{display_quota} eq 1 ) {
+	    $eduser_e{7}->configure(-textvariable => \$tcp_quota_new);
+	}
+
+	&tick_override($crypted_password);
+
+	# Get the first availible UID...
+	if( defined($primary_group) ) {
+	    $user_id = &choose_id('UID');
+	}
+
+	# Bind action to the Input gadgets...
+	$eduser_e{0}->bind('<Return>' => sub{
+	    # Make sure the user does not already exists...
+	    for( $i = 0; $passwd_line{$i}; $i++ ) {
+		@temp = split(':', $passwd_line{$i});
+		if( $user_name eq $temp[0] ) {
+		    # Oppps...
+		    $dialog = $edit_user_window->Dialog(-text   => "The user \`$user_name\' already exists...",
+							-bitmap => 'error'
+		    )->Show;
+
+		    $user_name = "";
+		    return( 1 );
+		}
+	    }
+
+	    # Survived so faar? Focus on the next input...
+	    $eduser_e{1}->focus;
+
+	    # Should the GID be the same as UID?
+	    if( $config{group_same_as_user} eq 'yes' || $config{group_same_as_user} eq 1 ) {
+		$primary_group = $user_name;
+	    }
+
+	    # Where should the users homedir be?
+	    if( $config{homes_type} eq 'group' && $primary_group ) {
+		$home_dir = "$config{homes_dir}/$primary_group/$user_name";
+	    } elsif( $config{homes_type} eq 'letter' && $user_name ) {
+		$first_letter = substr( $user_name, 0, 1 );
+		$home_dir = "$config{homes_dir}/$first_letter/$user_name";
+	    } else {
+		$home_dir = "$config{homes_dir}/$user_name";
+	    }
+	});
+	$eduser_e{1}->bind('<Return>' => sub{
+	    &exchange_password($user_name, $crypted_password);
+	    $eduser_e{2}->focus;
+	});
+	$eduser_e{2}->bind('<Return>' => sub{
+	    $eduser_e{4}->focus;
+
+	    if( $config{homes_type} eq 'group' ) {
+		$home_dir = "$config{homes_dir}/$primary_group/$user_name";
+	    } elsif( ($config{homes_type} eq 'letter') && ($user ne '') ) {
+		$first_letter = substr( $user_name, 0, 1 );
+		$home_dir = "$config{homes_dir}/$first_letter/$user_name";
+	    } else {
+		$home_dir = "$config{homes_dir}/$user_name";
+	    }
+
+	    # Get the first availible UID...
+	    $user_id = &choose_id('UID');
+	});
+	$eduser_e{3}->bind('<Return>' => sub{
+	    # Make sure this UID does not already exists...
+	    for( $i = 0; $passwd_line{$i}; $i++ ) {
+		@temp = split(':', $passwd_line{$i});
+		if( $user_id eq $temp[2] ) {
+		    # Oppps...
+		    $dialog = $edit_user_window->Dialog(-text   => "The user ID \`$user_id\' already exists...\n(Owned by the user `$temp[0]')",
+							-bitmap => 'error'
+		    )->Show;
+
+		    $user_id = "";
+		    return( 1 );
+		}
+	    }
+
+	    # Survived so faar? Darn, we must be good... Focus on the next input...
+	    $eduser_e{4}->focus;
+	});
+	$eduser_e{4}->bind('<Return>' => sub{$eduser_e{6}->focus});
+	$eduser_e{5}->bind('<Return>' => sub{$eduser_e{6}->focus});
+	$eduser_e{6}->bind('<Return>' => sub{
+	    # Maby we should double check that the login shell realy exists...
+	    if(! -f $login_shell ) {
+		# Nope...
+		$dialog = $edit_user_window->Dialog(-text   => "The login shell `$login_shell' does not exists...",
+						    -bitmap => 'error'
+		)->Show;
+
+		$login_shell = "";
+		return( 1 );
+	    }
+
+	    $eduser_e{7}->focus;
+	});
+	$eduser_e{7}->bind('<Return>' => sub{$eduser_e{0}->focus});
+
+	# -------
+
+	# Bind some shortcuts...
+	&emacs_bindnings($eduser_e{0});
+	&emacs_bindnings($eduser_e{1});
+	&emacs_bindnings($eduser_e{2});
+	&emacs_bindnings($eduser_e{3});
+	&emacs_bindnings($eduser_e{4});
+	&emacs_bindnings($eduser_e{5});
+	&emacs_bindnings($eduser_e{6});
+	&emacs_bindnings($eduser_e{7});
+
+	# -------
+
+	# Create the menu buttons...
+	foreach $i (1, 5, 6) {
+	    $menu_button{$i} = $eduser_f{$i}->Menubutton(-text => '?', -relief => 'raised');
+#	    $menu_button{$i}->command(-bitmap => $drop_down_icon);
+	    $menu_button{$i}->pack(-anchor => 'e');
+	}
+
+	# -------
+
+	# Create the password sub-menus...
+	$chpass_username = $user_name;
+	$chpass_action_1 = $action;      # Save it so that it won't 'dissapere'...
+	$menu_button{1}->command(-label => 'Edit',    -underline => 0, -command => sub{
+	    &change_password($user_name, 'user', $chpass_action_1);
+	});
+	$menu_button{1}->command(-label => 'Unlock',  -underline => 0, -command => sub{
+	    $crypted_password =~ s/^\*//;
+	    &exchange_password($chpass_username, $crypted_password);
+	    &tick_override($crypted_password);
+	});
+	$menu_button{1}->command(-label => 'Lock',  -underline => 0, -command => sub{
+	    $crypted_password = "*$crypted_password";
+	    &exchange_password($chpass_username, $crypted_password);
+	    &tick_override($crypted_password);
+	});
+	$menu_button{1}->command(-label => 'Clear', -underline => 0, -command => sub{
+	    $crypted_password = "";
+	    &exchange_password($chpass_username, $crypted_password);
+	    &tick_override($crypted_password);
+	});
+
+	# -------
+
+	# Create the home sub-menus...
+	if( $action eq 'edit' || $action eq 'add' ) {
+	    $menu_button{5}->command(-label => 'Choose', -underline => 0, -command => sub{
+                $file_dialog = $main_window->FileDialog(-Title  =>'This is my title',
+							-Create => 1,
+							-SelDir => 1,
+							-Path   => $config{homes_dir});
+
+		$dir = $file_dialog->Show;
+		if( defined($dir) ) {
+		    $home_dir = $dir;
+		}
+	    });
+	    $menu_button{5}->command(-label => 'None',   -underline => 0, -command => sub{
+		$home_dir = "$config{homes_dir}/$user_name";
+
+		$homestype_sub->invoke(1);
+	    });
+	    $menu_button{5}->command(-label => 'Group',  -underline => 0, -command => sub{
+		$home_dir = "$config{homes_dir}/$primary_group/$user_name";
+
+		$homestype_sub->invoke(1);
+	    });
+	    $menu_button{5}->command(-label => 'Letter', -underline => 0, -command => sub{
+		$first_letter = substr( $user_name, 0, 1 );
+		$home_dir = "$config{homes_dir}/$first_letter/$user_name";
+
+		$homestype_sub->invoke(2);
+	    });
+	}
+
+	# -------
+
+	# Create the shells sub-menus...
+	$i = 0;
+	do {
+	    if( $shells_line{$i} ) {
+		@line = split(':', $shells_line{$i});
+
+		if( $line[0] ) {
+		    $SHELL_CONT = 1;
+
+		    $shell_name{$i} = $line[0];
+		    $menu_button{6}->command(-label => $shells_line{$i}, -command => sub{
+			# Find the menu...
+			$menu = $menu_button{6}->cget('-menu');
+
+			# Find the line number
+			$number = $menu->index('active');
+
+			# Find the name of this number...
+			$login_shell = $shell_name{$number-1};
+		    });
+		} else {
+		    $SHELL_CONT = 0;
+		}
+	    } else {
+		$SHELL_CONT = 0;
+	    }
+
+	    $i++;
+	} while( $SHELL_CONT );
+    } else {
+	$edit_user_window->focus;
+    }
+
+    # Create the primary group button...
+    $group_button = $eduser_f{2}->Button(-text    => 'Choose',
+					 -relief  => 'raised',
+					 -width   => 3,
+					 -height  => 0.5,
+					 -command => [\&choose_group, 'primary_group']
+    );
+    $group_button->pack(-anchor => 'e');
+}
+
+# ----------------------
+# proc: edit_group( user_number, action )
+# desc: Edit a group...
+sub edit_group {
+    # group_number - Listbox number of group to change...
+    # action       - What action to preform...
+    #                add
+    #                rem
+    #                edit
+    local($group_number, $action) = @_;
+    my($i);
+
+    printf("Calling edit_group($group_number, $action)...\n") if( $DEBUG );
+
+    # Save it for later...
+    if( $action eq 'add' ) {
+	$groupno  = $number_of_groups;
+    } else {
+	$groupno  = $group_number;
+    }
+
+    if(! Exists($edit_group_window) ) {
+	# Create the window...
+	$edit_group_window = $main_window_groups->Toplevel;
+
+	# -------
+
+	if( $action eq 'edit' ) {
+	    # Split the group line...
+	    ($group_name,$crypted_password,$group_id,$group_members) = split(':', $group_line{$groupno});
+
+	    # Configure the window...
+	    $edit_group_window->title("Edit group $group_name");
+	    $edit_group_window->iconname("Edit $group_name");
+
+	    # Create the Main buttons...
+	    &main_buttons($edit_group_window, 'edit_group');
+	} elsif( $action eq 'add' ) {
+	    # Configure the window...
+	    $edit_group_window->title("Add new group");
+	    $edit_group_window->iconname('add group');
+
+	    # Create the Main buttons...
+	    &main_buttons($edit_group_window, 'add_group');
+
+	    if(! $DEBUG) {
+		# Clear some user variables...
+		$group_name       = "";
+		$crypted_password = "";
+		$group_id         = "";
+		$group_members    = "";
+	    } else {
+		# Set some default values...
+		$group_name       = "dumbo";
+		$crypted_password = "bn.SXppYi1Hg";
+		$group_id         = "1001";
+		$group_members    = "root";
+	    }
+	}
+
+	# Prepare the Input gadgets...
+	$edgroup_inputs = $edit_group_window->Frame;
+	@pl = (-side   => 'left',
+	       -expand => 'yes',
+	       -fill   => 'x',
+	       -padx   => '.5c',
+	       -pady   => '2'
+	);
+	$edgroup_inputs->pack(@pl);
+
+	# -------
+
+	# Create the Input buttons...
+	foreach $i (0, 1, 2, 3) {
+	    $edgroup_f{$i} = $edgroup_inputs->Frame(-bd => 1);
+
+	    $edgroup_l{$i} = $edgroup_f{$i}->Label();
+	    $edgroup_e{$i} = $edgroup_f{$i}->Entry(-relief => 'sunken', -width => 20);
+
+	    $edgroup_f{$i}->pack(-side => 'top', -fill => 'x');
+	    $edgroup_e{$i}->pack(-side => 'right');
+	    $edgroup_l{$i}->pack(-side => 'left');
+
+	    $edgroup_e{$i}->focus if $i == 0;
+	}
+
+	# Configure the Input gadgets...
+	$edgroup_l{0}->configure(-text => 'Groupname:',        -underline => 0);
+	$edgroup_l{1}->configure(-text => 'Password:',         -underline => 0);
+	$edgroup_l{2}->configure(-text => 'Group ID:',         -underline => 5);
+	$edgroup_l{3}->configure(-text => 'Group members:',    -underline => 0);
+
+	$edgroup_e{0}->configure(-textvariable => \$group_name);
+	$edgroup_e{1}->configure(-textvariable => \$crypted_password);
+	$edgroup_e{2}->configure(-textvariable => \$group_id);
+	$edgroup_e{3}->configure(-textvariable => \$group_members);
+
+	# -------
+
+	# Bind action to the Input gadgets...
+	$edgroup_e{0}->bind('<Return>' => sub{
+	    # Get the first availible UID...
+	    $group_id = &choose_id('GID');
+
+	    $edgroup_e{1}->focus;
+	});
+	$edgroup_e{1}->bind('<Return>' => sub{$edgroup_e{2}->focus});
+	$edgroup_e{2}->bind('<Return>' => sub{$edgroup_e{3}->focus});
+	$edgroup_e{3}->bind('<Return>' => sub{$edgroup_e{0}->focus});
+
+	# -------
+
+	# Create the menu buttons...
+	$menu_button = $edgroup_f{1}->Menubutton(-text => '?', -relief => 'raised');
+#	$menu_button->command(-bitmap => "$drop_down_icon");
+	$menu_button->pack(-anchor => 'e');
+
+	# Create the password sub-menus...
+	$chpass_action_1 = $action;      # Save it so that it won't 'dissapere'...
+	$menu_button->command(-label => 'Edit',  -underline => 0, -command => sub{&change_password($group_name, 'group', $chpass_action_1);});
+	$menu_button->command(-label => 'Lock',  -underline => 0, -command => sub{
+	    $crypted_password = "*$crypted_password";
+	});
+	$menu_button->command(-label => 'Clear', -underline => 0, -command => sub{$crypted_password = ""});
+
+	# -------
+
+	# Create the group members sub-menus...
+	$edgroup_f{3}->Button(-text    => 'Choose',
+			      -relief  => 'raised',
+			      -width   => 3,
+			      -height  => 0.5,
+			      -command => [\&choose_user, 'group_member']
+	)->pack(-anchor => 'e');
+    }
+}
+
+# ----------------------
+# proc: edit_paths( void )
+# desc: Get the path config...
+sub edit_paths {
+    my($edpath_f, $edpath_e, $edpath_l);
+
+    printf("Calling edit_paths(void)...\n") if( $DEBUG );
+
+    # Create the window...
+    if(! Exists($edit_paths_window) ) {
+	if( $config{main_func} eq 'users' ) {
+	    $edit_paths_window = $main_window_users->Toplevel;
+	} elsif( $config{main_func} eq 'groups' ) {
+	    $edit_paths_window = $main_window_groups->Toplevel;
+	}
+
+	# Configure the window...
+	$edit_paths_window->title('Edit Paths/Files');
+	$edit_paths_window->iconname('EditPathsFiles');
+
+	# Create the Main buttons...
+	&main_buttons($edit_paths_window, 'conf');
+
+	# Prepare the Input gadgets...
+	$edpath_inputs  = $edit_paths_window->Frame;
+	@pl = (-side   => 'left',
+	       -expand => 'yes',
+	       -fill   => 'x',
+	       -padx   => '.5c',
+	       -pady   => '2'
+	);
+	$edpath_inputs->pack(@pl);
+
+	# Create the Input buttons...
+	foreach $i (0, 1, 2, 3, 4, 5, 6, 7, 8) {
+	    $edpath_f{$i} = $edpath_inputs->Frame(-bd => 1);
+	    $edpath_e{$i} = $edpath_f{$i}->Entry(-relief => 'sunken', -width => 15);
+	    $edpath_l{$i} = $edpath_f{$i}->Label();
+
+	    if( $i == 8 && ($config{display_quota} eq 'no' || $config{display_quota} eq '0') ) {
+		# Break the for loop here, before we pack the last input gadget...
+		next;
+	    }
+
+	    $edpath_f{$i}->pack(-side => 'top', -fill => 'x');
+	    $edpath_e{$i}->pack(-side => 'right');
+	    $edpath_l{$i}->pack(-side => 'left');
+
+	    $edpath_e{$i}->focus if $i == 0;
+	}
+
+	# Configure the Input gadgets...
+	$edpath_l{0}->configure(-text => 'Available shells file:',       -underline => 0);
+	$edpath_l{1}->configure(-text => 'Default shell:',               -underline => 0);
+	$edpath_l{2}->configure(-text => 'Home directories:',            -underline => 0);
+	$edpath_l{3}->configure(-text => 'Skeleton directory:',          -underline => 1);
+	$edpath_l{4}->configure(-text => 'NIS directory:',               -underline => 0);
+	$edpath_l{5}->configure(-text => 'Extra user info directory:',   -underline => 0);
+	$edpath_l{6}->configure(-text => 'Locked users directory:',      -underline => 0);
+	$edpath_l{7}->configure(-text => 'File to print listbox to:',    -underline => 0);
+	$edpath_l{8}->configure(-text => 'mSQL server:',                 -underline => 0);
+
+	$edpath_e{0}->configure(-textvariable => \$config{shells});
+	$edpath_e{1}->configure(-textvariable => \$config{default_sh});
+	$edpath_e{2}->configure(-textvariable => \$config{homes_dir});
+	$edpath_e{3}->configure(-textvariable => \$config{skel_dir});
+	$edpath_e{4}->configure(-textvariable => \$config{nis_dir});
+	$edpath_e{5}->configure(-textvariable => \$config{user_info_dir});
+	$edpath_e{6}->configure(-textvariable => \$config{deact_usr_dir});
+	$edpath_e{7}->configure(-textvariable => \$config{output_file});
+	$edpath_e{8}->configure(-textvariable => \$config{msql_server});
+
+	$edpath_e{0}->bind('<Return>' => sub{$edpath_e{1}->focus});
+	$edpath_e{1}->bind('<Return>' => sub{$edpath_e{2}->focus});
+	$edpath_e{2}->bind('<Return>' => sub{$edpath_e{3}->focus});
+	$edpath_e{3}->bind('<Return>' => sub{$edpath_e{4}->focus});
+	$edpath_e{4}->bind('<Return>' => sub{$edpath_e{5}->focus});
+	$edpath_e{5}->bind('<Return>' => sub{$edpath_e{6}->focus});
+	$edpath_e{6}->bind('<Return>' => sub{$edpath_e{7}->focus});
+	$edpath_e{7}->bind('<Return>' => sub{$edpath_e{8}->focus});
+	$edpath_e{8}->bind('<Return>' => sub{$edpath_e{0}->focus});
+
+	# Bind some shortcuts...
+	&emacs_bindnings($edpath_e{0});	&emacs_bindnings($edpath_e{3});	&emacs_bindnings($edpath_e{6});
+	&emacs_bindnings($edpath_e{1});	&emacs_bindnings($edpath_e{4});	&emacs_bindnings($edpath_e{7});
+	&emacs_bindnings($edpath_e{2});	&emacs_bindnings($edpath_e{5});	&emacs_bindnings($edpath_e{8});
+    } else {
+	$edit_paths_window->focus;
+    }
+}
+
+# ----------------------
+# proc: edit_options( void )
+# desc: Get the options config...
+sub edit_options {
+    printf("Calling edit_options(void)...\n") if( $DEBUG );
+
+    if(! Exists($edit_options_window) ) {
+	# Create the window...
+	if( $config{main_func} eq 'users' ) {
+	    $edit_options_window = $main_window_users->Toplevel;
+	} elsif( $config{main_func} eq 'groups' ) {
+	    $edit_options_window = $main_window_groups->Toplevel;
+	}
+
+	# Configure the Main window...
+	$edit_options_window->title('Edit Configs');
+	$edit_options_window->iconname('EditConfs');
+
+	# Create the Main buttons...
+	&main_buttons($edit_options_window, 'conf');
+
+	# Prepare the left and right frames...
+	$frame_0 = $edit_options_window->Frame(-relief => 'sunken', -borderwidth => 1);
+	$frame_1 = $edit_options_window->Frame(-relief => 'sunken', -borderwidth => 1);
+	$frame_2 = $edit_options_window->Frame;
+	$frame_3 = $edit_options_window->Frame;
+	@pl = (-side   => 'left',
+	       -expand => 'yes',
+	       -fill   => 'x',
+	       -padx   => '.1c',
+	       -pady   => '.1c',
+	);
+	$frame_0->pack(@pl);
+	$frame_1->pack(@pl);
+	$frame_2->pack(@pl);
+	$frame_3->pack(@pl);
+
+	# Prepare the middle frames...
+	$frame_2_0 = $frame_2->Frame(-relief => 'sunken', -borderwidth => 1);
+	$frame_2_1 = $frame_2->Frame(-relief => 'sunken', -borderwidth => 1);
+	@pl = (-side   => 'top',
+	       -expand => 'yes',
+	       -fill   => 'x',
+	       -padx   => '.1c',
+	       -pady   => '.1c',
+	       -anchor => 'n'
+	);
+	$frame_2_0->pack(@pl);
+	$frame_2_1->pack(@pl);
+
+	# Prepare the middle frames...
+	$frame_3_0 = $frame_3->Frame(-relief => 'sunken', -borderwidth => 1);
+	$frame_3_1 = $frame_3->Frame(-relief => 'sunken', -borderwidth => 1);
+	$frame_3_2 = $frame_3->Frame(-relief => 'sunken', -borderwidth => 1);
+	@pl = (-side   => 'top',
+	       -expand => 'yes',
+	       -fill   => 'x',
+	       -padx   => '.1c',
+	       -pady   => '.1c',
+	       -anchor => 'n'
+	);
+	$frame_3_0->pack(@pl);
+	$frame_3_1->pack(@pl);
+	$frame_3_2->pack(@pl);
+
+	# Create the FIRST row...
+	# ---------------------------------------------------
+	$frame_0->Label(        -text     => 'Displayed fields:')->pack(-anchor => 'n');
+	if( $check_tcpquota ) {
+	    $frame_0->Checkbutton(-text     => 'TCPQuota',
+				  -variable => \$config{display_quota},
+				  )->pack(-side => 'top', -anchor   => 'w');
+	} else {
+	    $frame_0->Checkbutton(-text     => 'TCPQuota',
+				  -variable => \$config{display_quota},
+				  -state    => 'disabled'
+				  )->pack(-side => 'top', -anchor   => 'w');
+	}
+	$frame_0->Checkbutton(  -text     => 'Login Name',
+			        -variable => \$config{display_name},
+	)->pack(-side => 'top', -anchor   => 'w');
+	$frame_0->Checkbutton(  -text     => 'Password',
+			        -variable => \$config{display_passwd},
+	)->pack(-side => 'top', -anchor   => 'w');
+	$frame_0->Checkbutton(  -text     => 'User ID',
+			        -variable => \$config{display_uid},
+	)->pack(-side => 'top', -anchor   => 'w');
+	$frame_0->Checkbutton(  -text     => 'Group ID',
+			        -variable => \$config{display_group},
+	)->pack(-side => 'top', -anchor   => 'w');
+	$frame_0->Checkbutton(  -text     => 'Full name',
+			        -variable => \$config{display_full},
+	)->pack(-side => 'top', -anchor   => 'w');
+	$frame_0->Checkbutton(  -text     => 'Home directory',
+			        -variable => \$config{display_home},
+	)->pack(-side => 'top', -anchor   => 'w');
+	$frame_0->Checkbutton(  -text     => 'Login shell',
+			        -variable => \$config{display_shell},
+	)->pack(-side => 'top', -anchor   => 'w');
+
+	# Create the SECOND row...
+	# ---------------------------------------------------
+	$frame_1->Label(      -text     => 'Sort list by:')->pack(-anchor => 'n');
+	if( $check_tcpquota ) {
+	    $frame_1->Radiobutton(-text     => 'TCPQuota',
+				  -variable => \$config{sort_by},
+				  -value    => 'quota'
+				  )->pack(-side => 'top', -anchor => 'w');
+	} else {
+	    $frame_1->Radiobutton(-text     => 'TCPQuota',
+				  -variable => \$config{sort_by},
+				  -value    => 'quota',
+				  -state    => 'disabled'
+				  )->pack(-side => 'top', -anchor => 'w');
+	}
+	$frame_1->Radiobutton(-text     => 'Login name',
+			      -variable => \$config{sort_by},
+			      -value    => 'login'
+	)->pack(-side => 'top', -anchor => 'w');
+	$frame_1->Radiobutton(-text     => 'User ID',
+			      -variable => \$config{sort_by},
+			      -value    => 'uid'
+	)->pack(-side => 'top', -anchor => 'w');
+	$frame_1->Radiobutton(-text     => 'Group ID',
+			      -variable => \$config{sort_by},
+			      -value    => 'gid'
+	)->pack(-side => 'top', -anchor => 'w');
+	$frame_1->Radiobutton(-text     => 'Full name',
+			      -variable => \$config{sort_by},
+			      -value    => 'full'
+	)->pack(-side => 'top', -anchor => 'w');
+	$frame_1->Radiobutton(-text     => 'Home directory',
+			      -variable => \$config{sort_by},
+			      -value    => 'home'
+	)->pack(-side => 'top', -anchor => 'w');
+	$frame_1->Radiobutton(-text     => 'Login shell',
+			      -variable => \$config{sort_by},
+			      -value    => 'shell'
+	)->pack(-side => 'top', -anchor => 'w');
+	$frame_1->Radiobutton(-text     => 'No sorting',
+			      -variable => \$config{sort_by},
+			      -value    => 'nosort'
+	)->pack(-side => 'top', -anchor => 'w');
+
+	# Create the THIRD row...
+	$frame_2_0->Label(        -text     => 'NIS/YP options:')->pack(-anchor => 'n');
+	$frame_2_0->Checkbutton(  -text     => 'Auto update DB',
+			        -variable => \$config{remove_from_nis},
+	)->pack(-side => 'top', -anchor   => 'w');
+	$frame_2_0->Checkbutton(  -text     => 'Push DB to slaves',
+			        -variable => \$config{push_nis_db},
+	)->pack(-side => 'top', -anchor   => 'w');
+	$frame_2_0->Checkbutton(  -text     => 'Show if exists',
+			        -variable => \$config{show_exists_db},
+	)->pack(-side => 'top', -anchor   => 'w');
+	$frame_2_0->Checkbutton(  -text     => 'Use only NIS, not passwd',
+			        -variable => \$config{use_only_nis},
+	)->pack(-side => 'top', -anchor   => 'w');
+
+	$frame_2_1->Label(        -text     => 'Other options:')->pack(-anchor => 'n');
+	$frame_2_1->Checkbutton(  -text     => 'Confirm removal',
+			        -variable => \$config{confirm_removal},
+	)->pack(-side => 'top', -anchor => 'w');
+	$frame_2_1->Checkbutton(  -text     => 'Group name = User name',
+				-variable => \$config{group_same_as_user},
+	)->pack(-side => 'top', -anchor => 'w');
+	$frame_2_1->Checkbutton(  -text     => 'Start user ID from group ID',
+				-variable => \$config{start_uid_from_gid},
+	)->pack(-side => 'top', -anchor => 'w');
+
+	# Create the right side...
+	# ----------------------------------------
+	$frame_3_0->Label(      -text     => 'Show password as:')->pack(-anchor => 'n');
+	$display_short_button   = $frame_3_0->Radiobutton(-text     => 'Descriptive',
+							  -variable => \$config{display_type_passwd},
+							  -value    => 'descriptive'
+	)->pack(-side => 'top', -anchor => 'w');
+	$display_long_button    = $frame_3_0->Radiobutton(-text     => 'Crypted',
+							  -variable => \$config{display_type_passwd},
+							  -value    => 'crypted'
+	)->pack(-side => 'top',  -anchor => 'w');
+	# ----------------------------------------
+	$frame_3_1->Label(       -text => 'Show GID as:')->pack(-anchor => 'n');
+	$display_number_button  = $frame_3_1->Radiobutton(-text     => 'Number',
+							  -variable => \$config{display_type_group},
+							  -value    => 'number'
+	)->pack(-side => 'top',  -anchor => 'w');
+	$display_name_button    = $frame_3_1->Radiobutton(-text     => 'Name',
+							  -variable => \$config{display_type_group},
+							  -value    => 'name'
+	)->pack(-side => 'top',  -anchor => 'w');
+
+	# Disable the right checkbuttons...
+	if( $config{display_passwd} eq 'no' || $config{display_passwd} eq 0 ) {
+	    $display_short_button->configure( -state => 'disabled');
+	    $display_long_button->configure(  -state => 'disabled');
+	} else {
+	    $display_short_button->configure( -state => 'normal');
+	    $display_long_button->configure(  -state => 'normal');
+	}
+
+	if( $config{display_group} eq 'no' || $config{display_group} eq 0 ) {
+	    $display_number_button->configure(-state => 'disabled');
+	    $display_name_button->configure(  -state => 'disabled');
+	} else {
+	    $display_number_button->configure(-state => 'normal');
+	    $display_name_button->configure(  -state => 'normal');
+	}
+    } else {
+	$edit_options_window->focus;
+    }
+}
+
+# ----------------------
+# proc: edit_list_sizes( void )
+# desc: Get the sizes of the list entries...
+sub edit_list_sizes {
+    printf("Calling edit_list_sizes(void)...\n") if( $DEBUG );
+
+    # Create the window...
+    if(! Exists($edit_sizes_window) ) {
+	if( $config{main_func} eq 'users' ) {
+	    $edit_sizes_window = $main_window_users->Toplevel;
+	} elsif( $config{main_func} eq 'groups' ) {
+	    $edit_sizes_window = $main_window_groups->Toplevel;
+	}
+
+	# Configure the window...
+	$edit_sizes_window->title('Edit list sizes');
+	$edit_sizes_window->iconname('EditListSizes');
+
+	# Create the Main buttons...
+	&main_buttons($edit_sizes_window, 'conf');
+
+	# Prepare the Input gadgets...
+	$edsizes_inputs = $edit_sizes_window->Frame;
+	@pl = (-side   => 'left',
+	       -expand => 'yes',
+	       -fill   => 'x',
+	       -padx   => '.5c',
+	       -pady   => '2'
+	);
+	$edsizes_inputs->pack(@pl);
+
+	# Create the Input buttons...
+	foreach $i (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11) {
+	    $edsizes_f{$i} = $edsizes_inputs->Frame(-bd => 1);
+	    $edsizes_e{$i} = $edsizes_f{$i}->Entry(-relief => 'sunken', -width => 8);
+	    $edsizes_l{$i} = $edsizes_f{$i}->Label();
+
+#	    if( $i == 7 && ($config{display_quota} eq 'no' || $config{display_quota} eq '0') ) {
+#		# Break the for loop here, before we pack the last input gadget...
+#		next;
+#	    }
+
+	    $edsizes_f{$i}->pack(-side => 'top', -fill => 'x');
+	    $edsizes_e{$i}->pack(-side => 'right');
+	    $edsizes_l{$i}->pack(-side => 'left');
+
+	    $edsizes_e{$i}->focus if $i == 0;
+	}
+
+	# Configure the Input gadgets...
+	$edsizes_l{0}->configure( -text => 'TCP quota:',           -underline => 4);
+	$edsizes_l{1}->configure( -text => 'Login name:',          -underline => 0);
+	$edsizes_l{2}->configure( -text => 'Passwd, crypted:',     -underline => 8);
+	$edsizes_l{3}->configure( -text => 'Passwd, descriptive:', -underline => 8);
+	$edsizes_l{4}->configure( -text => 'UID, number:',         -underline => 8);
+	$edsizes_l{5}->configure( -text => 'UID, name:',           -underline => 5);
+	$edsizes_l{6}->configure( -text => 'Fullname:',            -underline => 0);
+	$edsizes_l{7}->configure( -text => 'Home directory:',      -underline => 0);
+	$edsizes_l{8}->configure( -text => 'Shell:',               -underline => 0);
+	$edsizes_l{9}->configure( -text => 'First UID:',           -underline => 0);
+	$edsizes_l{10}->configure(-text => 'Minimum NIS/YP UID:',  -underline => 0);
+	$edsizes_l{11}->configure(-text => 'Maximum NIS/YP UID:',  -underline => 0);
+
+	$edsizes_e{0}->configure( -textvariable => \$config{size_quota});
+	$edsizes_e{1}->configure( -textvariable => \$config{size_name});
+	$edsizes_e{2}->configure( -textvariable => \$config{size_passwd_crypted});
+	$edsizes_e{3}->configure( -textvariable => \$config{size_passwd_desc});
+	$edsizes_e{4}->configure( -textvariable => \$config{size_id_number});
+	$edsizes_e{5}->configure( -textvariable => \$config{size_id_name});
+	$edsizes_e{6}->configure( -textvariable => \$config{size_fullname});
+	$edsizes_e{7}->configure( -textvariable => \$config{size_homedir});
+	$edsizes_e{8}->configure( -textvariable => \$config{size_shell});
+	$edsizes_e{9}->configure( -textvariable => \$config{first_uid});
+	$edsizes_e{10}->configure(-textvariable => \$config{min_nis_uid});
+	$edsizes_e{11}->configure(-textvariable => \$config{max_nis_uid});
+
+	$edsizes_e{0}->bind('<Return>' => sub{$edsizes_e{1}->focus});
+	$edsizes_e{1}->bind('<Return>' => sub{$edsizes_e{2}->focus});
+	$edsizes_e{2}->bind('<Return>' => sub{$edsizes_e{3}->focus});
+	$edsizes_e{3}->bind('<Return>' => sub{$edsizes_e{4}->focus});
+	$edsizes_e{4}->bind('<Return>' => sub{$edsizes_e{5}->focus});
+	$edsizes_e{5}->bind('<Return>' => sub{$edsizes_e{6}->focus});
+	$edsizes_e{6}->bind('<Return>' => sub{$edsizes_e{7}->focus});
+	$edsizes_e{7}->bind('<Return>' => sub{$edsizes_e{8}->focus});
+	$edsizes_e{8}->bind('<Return>' => sub{$edsizes_e{9}->focus});
+	$edsizes_e{9}->bind('<Return>' => sub{$edsizes_e{10}->focus});
+	$edsizes_e{10}->bind('<Return>' => sub{$edsizes_e{11}->focus});
+	if(! $check_tcpquota ) {
+	    $edsizes_e{11}->bind('<Return>' => sub{$edsizes_e{1}->focus});
+	} else {
+	    $edsizes_e{11}->bind('<Return>' => sub{$edsizes_e{0}->focus});
+	}
+
+	if(! $check_tcpquota ) {
+	    $edsizes_e{0}->configure(-state => 'disabled');
+	    $edsizes_e{1}->focus;
+	}
+
+	# Bind some shortcuts...
+	&emacs_bindnings($edsizes_e{0});	&emacs_bindnings($edsizes_e{4});
+	&emacs_bindnings($edsizes_e{1});	&emacs_bindnings($edsizes_e{5});
+	&emacs_bindnings($edsizes_e{2});	&emacs_bindnings($edsizes_e{6});
+	&emacs_bindnings($edsizes_e{3});
+    } else {
+	$edit_sizes_window->focus;
+    }
+}
+
+# ----------------------
+# proc: edit_quota( user_number )
+# desc: Edit the quota values...
+sub edit_quota {
+    local($user_number) = @_;
+
+    printf("Calling edit_quota($user_number)...\n") if( $DEBUG );
+
+    #  0         1       2       3      4       5     6     7     8
+    # User    used    soft    hard  grace    used  soft  hard  grace
+    # root   53043       0       0           2460     0     0       
+    ($user, $block_used, $block_soft, $block_hard, $block_grace, $files_used, $files_soft, $files_hard, $files_grace) = split(':', $quota_line{$user_number});
+
+    # Create the window...
+    if(! Exists($edit_quota_window) ) {
+	# Create the window...
+	if( Exists($main_window_quota) ) {
+	    $edit_quota_window = $main_window_quota->Toplevel;
+	} elsif( Exists($main_window_users) ) {
+	    $edit_quota_window = $main_window_users->Toplevel;
+	}
+
+	# Configure the 'edit quota' window...
+	$edit_quota_window->title("Edit quota for $user");
+	$edit_quota_window->iconname("edit-quota, $user");
+	$edit_quota_window->ConfigSpecs(-resizeable => ['ACTIVE',undef,undef,1]);
+
+	# Create the Main buttons...
+	&main_buttons($edit_quota_window, 'quota2');
+
+	# Prepare the Input gadgets...
+	$edit_quota_inputs = $edit_quota_window->Frame();
+	@pl = (-side   => 'left',
+	       -expand => 'yes',
+	       -padx   => '.3c',
+	       -pady   => '1'
+	);
+	$edit_quota_inputs->pack(@pl);
+
+	# Create the Input buttons...
+	foreach $i (0, 1, 2, 3, 4, 5, 6, 7, 8) {
+	    # The frame...
+	    $edit_quota_f{$i} = $edit_quota_inputs->Frame(-bd => 1);
+	    $edit_quota_f{$i}->pack(-side => 'top', -fill => 'x');
+
+	    # The label
+	    $edit_quota_l{$i} = $edit_quota_f{$i}->Label();
+	    $edit_quota_l{$i}->pack(-side => 'left');
+
+	    # The input
+	    $edit_quota_e{$i} = $edit_quota_f{$i}->Entry(-width => 15, -relief => 'sunken');
+	    $edit_quota_e{$i}->pack(-side => 'right');
+
+	    # The focus
+	    $edit_quota_e{$i}->focus if $i == 2;
+	}
+
+	$edit_quota_l{0}->configure(-text => 'User name:');
+	$edit_quota_l{1}->configure(-text => 'Blocks:');
+	$edit_quota_l{2}->configure(-text => '   Max Soft:');
+	$edit_quota_l{3}->configure(-text => '   Max Hard:');
+	$edit_quota_l{4}->configure(-text => '   Grace:');
+	$edit_quota_l{5}->configure(-text => 'Files:');
+	$edit_quota_l{6}->configure(-text => '   Max Soft:');
+	$edit_quota_l{7}->configure(-text => '   Max Hard:');
+	$edit_quota_l{8}->configure(-text => '   Grace:');
+
+	$edit_quota_e{0}->configure(-textvariable => \$user,       -relief => 'raised', -state => 'disabled');
+	$edit_quota_e{1}->configure(-textvariable => \$block_used, -relief => 'raised', -state => 'disabled');
+	$edit_quota_e{2}->configure(-textvariable => \$block_soft);
+	$edit_quota_e{3}->configure(-textvariable => \$block_hard);
+	$edit_quota_e{4}->configure(-textvariable => \$block_grace);
+	$edit_quota_e{5}->configure(-textvariable => \$files_used, -relief => 'raised', -state => 'disabled');
+	$edit_quota_e{6}->configure(-textvariable => \$files_soft);
+	$edit_quota_e{7}->configure(-textvariable => \$files_hard);
+	$edit_quota_e{8}->configure(-textvariable => \$files_grace);
+
+	$edit_quota_e{2}->bind('<Return>' => sub{$edit_quota_e{3}->focus});
+	$edit_quota_e{3}->bind('<Return>' => sub{$edit_quota_e{5}->focus});
+	$edit_quota_e{5}->bind('<Return>' => sub{$edit_quota_e{6}->focus});
+	$edit_quota_e{6}->bind('<Return>' => sub{$edit_quota_e{7}->focus});
+	$edit_quota_e{7}->bind('<Return>' => sub{$edit_quota_e{2}->focus});
+    } else {
+	$edit_quota_window->focus;
+    }
+}
+
+# ----------------------
+# proc: edit_nis( void ) ERROR!
+# desc: Edit the master NIS database
+sub edit_nis {
+    printf("Calling edit_nis(void)...\n") if( $DEBUG );
+}
+
+# ----------------------
+# proc: edit_shadow_values( window )
+# desc: Show a frame in the add/edit user window
+sub edit_shadow_values {
+    local($window) = @_;
+    my($i);
+    my(@pl) = ();
+
+    printf("Calling edit_shadow_values($window)...\n") if( $DEBUG );
+
+    @pl = (-side   => 'left',
+	   -expand => 'yes',
+	   -fill   => 'both',
+	   -pady   => '2'
+    );
+
+    # Prepare the Input gadgets...
+    $window->Label(-text => 'Shadow values')->pack(-side => 'top', -anchor => 'n');
+    $eduser_shadow = $window->Frame;
+    $eduser_shadow->pack(@pl);
+
+    # Create the Input gadgets...
+    foreach $i (0, 1, 2, 3, 4, 5) {
+	$eduser_shadow_f{$i} = $eduser_shadow->Frame(-bd => 1);
+
+	$eduser_shadow_l{$i} = $eduser_shadow_f{$i}->Label();
+	$eduser_shadow_e{$i} = $eduser_shadow_f{$i}->Entry(-relief => 'sunken', -width => 10);
+
+	$eduser_shadow_f{$i}->pack(-side => 'top',   -fill   => 'x');
+	$eduser_shadow_e{$i}->pack(-side => 'right');
+	$eduser_shadow_l{$i}->pack(-side => 'left');
+    }
+
+    # Configure the Input gadgets...
+    $eduser_shadow_l{0}->configure(-text => 'Password last changed');
+    $eduser_shadow_l{1}->configure(-text => 'Days before passwd may be changed');
+    $eduser_shadow_l{2}->configure(-text => 'Days before passwd must be changed');
+    $eduser_shadow_l{3}->configure(-text => 'Days to warn before passwd expires');
+    $eduser_shadow_l{4}->configure(-text => 'Days before locking account after passwd expired');
+    $eduser_shadow_l{5}->configure(-text => 'Days to wait before locking account');
+
+    $eduser_shadow_e{0}->configure(-textvariable => \$shadow_value{0});
+    $eduser_shadow_e{1}->configure(-textvariable => \$shadow_value{1});
+    $eduser_shadow_e{2}->configure(-textvariable => \$shadow_value{2});
+    $eduser_shadow_e{3}->configure(-textvariable => \$shadow_value{3});
+    $eduser_shadow_e{4}->configure(-textvariable => \$shadow_value{4});
+    $eduser_shadow_e{5}->configure(-textvariable => \$shadow_value{5});
+
+    $eduser_shadow = 1;
+}
+
+# ----------------------
+# proc: edit_quota_values( window )
+# desc: Show a frame in the add/edit user window
+sub edit_quota_values {
+    local($window) = @_;
+    my($i);
+    my(@pl) = ();
+
+    printf("Calling edit_quota_values($window)...\n") if( $DEBUG );
+
+    @pl = (-side   => 'left',
+	   -fill   => 'both',
+	   -pady   => '1'
+    );
+
+    # Block limits                   File limits
+    # used    soft    hard  grace    used  soft  hard  grace
+
+    # Prepare the Input gadgets...
+    $window->Label(-text => 'Quota values')->pack(-side => 'top',   -anchor => 'n');
+    $window->Label(-text => 'Block limits                                       File limits')->pack(-side => 'top',  -anchor => 'w');
+    $window->Label(-text => 'used       soft        hard       grace      used       soft       hard       grace')->pack(-side => 'top',  -anchor => 'w');
+    $eduser_quota = $window->Frame;
+    $eduser_quota->pack(@pl);
+
+    # Cycle through the quota lines one by one...
+    $i = 0;
+    while( $quota_line{$i} ) {
+	$filesys = $quota_line{$i};
+
+	# Create frames...
+	$eduser_quota_frame{$i} = $eduser_quota->Frame(-bd => 1)->pack(-side => 'top', -anchor => 'w');
+	$eduser_quota_frame{$i}->Label(-text => "Filesystem: $filesys")->pack(-side => 'top', -anchor => 'w');
+
+	# Create the Input gadgets...
+	foreach $j (0, 1, 2, 3, 4, 5, 6, 7) {
+	    # Create frames...
+	    $eduser_quota_f{"$filesys:$j"}    = $eduser_quota_frame{$i}->Frame(-bd => 1);
+	    $eduser_quota_e{"$filesys:$j"}    = $eduser_quota_f{"$filesys:$j"}->Entry(-relief => 'sunken', -width => 6);
+
+	    # Pack it up...
+	    $eduser_quota_f{"$filesys:$j"}->pack(   -side => 'right', -fill => 'x');
+	    $eduser_quota_e{"$filesys:$j"}->pack(   -side => 'right');
+	}
+
+	$eduser_quota_e{"$filesys:0"}->configure(-textvariable => \$quota_value{0});
+	$eduser_quota_e{"$filesys:1"}->configure(-textvariable => \$quota_value{1});
+	$eduser_quota_e{"$filesys:2"}->configure(-textvariable => \$quota_value{2});
+	$eduser_quota_e{"$filesys:3"}->configure(-textvariable => \$quota_value{3});
+	$eduser_quota_e{"$filesys:4"}->configure(-textvariable => \$quota_value{4});
+	$eduser_quota_e{"$filesys:5"}->configure(-textvariable => \$quota_value{5});
+	$eduser_quota_e{"$filesys:6"}->configure(-textvariable => \$quota_value{6});
+	$eduser_quota_e{"$filesys:7"}->configure(-textvariable => \$quota_value{7});
+
+	$i++;
+    }
+
+    $eduser_quota = 1;
+}
+
+# ----------------------
+# proc: show_quota( filesystem )
+# desc: GUI for the quota values...
+sub show_quota {
+    local($filesys) = @_;
+    my($scroll, $entry, $top, $middle, $bottom);
+
+    printf("Calling show_quota($filesys)...\n") if( $DEBUG );
+
+    if(! Exists($show_quota_window) ) {
+	# Create the window...
+	$show_quota_window = $main_window_quota->Toplevel;
+
+	# Configure the window...
+	$show_quota_window->title("Edit quota for $filesys");
+	$show_quota_window->iconname("xedit-quota_edit");
+	$show_quota_window->ConfigSpecs(-resizeable => ['ACTIVE',undef,undef,1]);
+
+	# Create some frames...
+	$show_quota_top    = $show_quota_window->Frame;
+	$show_quota_middle = $show_quota_window->Frame;
+	$show_quota_bottom = $show_quota_window->Frame;
+	(@pl) = (-side   => 'top',
+		 -expand => 'yes',
+		 -padx   => 10,
+		 -pady   => 1,
+		 -fill   => 'both'
+	);
+	$show_quota_top->pack(@pl,    -expand => 'no');
+	$show_quota_middle->pack(@pl);
+	$show_quota_bottom->pack(@pl, -expand => 'no');
+
+	# Create the Main buttons...
+	main_buttons($show_quota_bottom, 'quota2');
+
+	$quota_listbox = $show_quota_middle->Listbox(-setgrid => 1,
+						     -height  => 15,
+						     -width   => $win_size,
+						     -font    => 'fixed'
+	);
+	$scroll = $show_quota_middle->Scrollbar(-command => [$quota_listbox => 'yview']);
+	$quota_listbox->configure(-yscrollcommand => [$scroll => 'set']);
+	$scroll->pack(-side => 'right', -fill => 'y');
+	$quota_listbox->pack(-expand => 'yes', -fill => 'both');
+	$quota_listbox->bind('<Double-Button-1>' => sub{get_list_entry('quota', $quota_listbox)});
+    }
+
+    # Clear the content in the text widget...
+    $quota_listbox->delete(0, 'end');
+
+    # Print out the header...
+#    $show_quota_top->Label(-text => 'Mount      Blocks  Quota   Limit    Grace  Files   Quota  Limit   Grace')->pack(-side => 'left', -anchor => 'w');
+
+    # Read in the user/group data to the text widget...
+    &listbox_quota($quota_listbox, $filesys);
+}
+
+# ----------------------
+# proc: get_group_name( group_id )
+# desc: Get the group name associated with the group id...
+sub get_group_name {
+    local($group_id) = @_;
+    my($groups, $i);
+    my(@grp) = ();
+
+    # Cycle through the group entries...
+    $i = 0;
+    do {
+	if( $group_line{$i} && ! $groups ) {
+	    @grp = split(':', $group_line{$i});
+
+	    if( $grp[0] ) {
+		$GROUP_CONT = 1;
+
+		if( $grp[2] eq $group_id ) {
+		    $group_name  = $grp[0];
+		    $groups = 1;
+		}
+	    } else {
+		$GROUP_CONT = 0;
+	    }
+	} else {
+	    $GROUP_CONT = 0;
+	}
+	$i++;
+    } while( $GROUP_CONT );
+
+    # If we could not find the group name, fallback to the GID...
+    if(! $groups) {
+	$group_name = "$group_id";
+    }
+
+    # Return the group name...
+    return( $group_name );
+}
+
+# ----------------------
+# proc: get_group_id( group_name )
+# desc: Get the group id associated with the group name...
+sub get_group_id {
+    local($group_name) = @_;
+    my($groups, $i) = 0;
+    my(@grp) = ();
+
+    # Cycle through the group entries...
+    $i = 0;
+    do {
+	if( $group_line{$i} && ! $groups ) {
+	    @grp = split(':', $group_line{$i});
+
+	    if( $grp[0] ) {
+		$GROUP_CONT = 1;
+
+		if( $grp[0] eq $group_name ) {
+		    $group_id    = $grp[2];
+		    $groups = 1;
+		}
+	    } else {
+		$GROUP_CONT = 0;
+	    }
+	} else {
+	    $GROUP_CONT = 0;
+	}
+	$i++;
+    } while( $GROUP_CONT );
+
+    # If we could not find the group id/name, fallback to input...
+    if(! $groups) {
+	$group_name = "-none-";
+    }
+
+    # Return the group name...
+    return( $group_id );
+}
+
+# ----------------------
+# proc: get_user_name( user_name )
+# desc: Check if the username already exists
+sub get_user_name {
+    local($user_name) = @_;
+
+    # By default, the user does not exists...
+    $user_exists = 0;
+
+    # Check if the user already exists...
+    $i = 0;
+    do {
+	if( $passwd_line{$i} ) {
+	    @pass = split(':', $passwd_line{$i});
+
+	    if( $pass[0] eq $user_name ) {
+		# User already exist...
+
+		$user_exists = 1;
+		$PASS_CONT   = 0;
+	    } elsif( $pass[2] eq $user_id ) {
+		# User ID already exist...
+
+		$user_exists = 2;
+		$PASS_CONT   = 0;
+	    } else {
+		$PASS_CONT    = 1;
+	    }
+	} else {
+	    $PASS_CONT    = 0;
+	}
+
+	$i++;
+    } while( $PASS_CONT );
+
+    # Return the answer...
+    return( $user_exists );
+}
+
+# ----------------------
+# proc: get_secondary_grops( user_name )
+# desc: Find all the groups the specified user is member of
+sub get_secondary_groups {
+    local($user_name) = @_;
+    my($i, @grp);
+
+    printf("Calling get_secondary_groups($user_name)...\n") if( $DEBUG );
+
+    $i = 0;
+    while( $group_line{$i} ) {
+	if( $group_line{$i} =~ /$user_name/ ) {
+	    @grp = split(':', $group_line{$i});
+
+	    if( $grp[3] ) {
+		# Insert the group in the 'Secondary groups' listbox...
+		$secondary_groups_listbox->insert('end', $grp[0]);
+
+		# Remember this user/group...
+		$secondary_groups{$secondary} = "$user_name:$grp[0]";
+		$secondary++;
+	    }
+	}
+
+	$i++;
+    }
+}
+
+# ----------------------
+# proc: check_shadow( void )
+# desc: Check if we use shadow password on this system...
+sub check_shadow {
+    printf("Calling check_shadow(void)...\t") if( $DEBUG );
+
+    if( -f $config{shadow_passwd}) {
+	# We have a shadow file, support shadow passwd's...
+	$config{shadow} = "yes";
+    } else {
+	# No shadow file, don't support it...
+	$config{shadow} = "no";
+    }
+
+    printf("$config{shadow}\n") if( $DEBUG );
+}
+
+# ----------------------
+# proc: check_quota( void )
+# desc: Check if we use quota on this system...
+sub check_quota {
+    my($temp);
+
+    printf("Calling check_quota(void)...\t") if( $DEBUG );
+
+    $quota_support = 'no';
+    $i = 0;
+
+    open(FILE, $config{fstab}) || printf("\n  WARNING: Could not open $config{fstab}, $!\n");
+    while(! eof(FILE) ) {
+	$temp = <FILE>;
+	next if( $temp =~ /^#/ );        # Skip comments
+
+	@line = split(' ', $temp);
+	if( $line[3] ) {
+	    if( $line[3] =~ /quota/ ) {
+		$quota_support  = "yes";
+
+		$quota_line{$i} = $line[1];
+		$i++;
+	    }
+	}
+    }
+
+    # Close the file handle...
+    close(FILE);
+
+    printf("$quota_support\n") if( $DEBUG );
+}
+
+# ----------------------
+# proc: check_tcp( void )
+# desc: Check if we use TCP quota on this system...
+sub check_tcp {
+    my($temp);
+
+    printf("Calling check_tcp(void)...\t") if( $DEBUG );
+
+    # Easiest is to check the mSQL config file for the line 'database=tcpquota'...
+    if( -f $config{msql_file} ) {
+	if( open(MSQL, $config{msql_file}) ) {
+	    while(! eof(MSQL) ) {
+		$temp = <MSQL>;
+		chop($temp);
+
+		next if( $temp =~ /^database/ );
+		if( $temp =~ /tcpquota/ ) {
+		    $config{display_quota} = 1;
+		}
+	    }
+	    close(MSQL);
+	}
+    }
+
+    if( $config{display_quota} eq 'yes' || $config{display_quota} eq 1 ) {
+	printf("yes\n") if( $DEBUG );
+    } else {
+	printf("no\n") if( $DEBUG );
+    }
+}
+
+# ----------------------
+# proc: check_nis( void )
+# desc: Check if we use NIS on this system...
+sub check_nis {
+    my($support);
+
+    printf("Calling check_nis(void)...\t") if( $DEBUG );
+
+    # Default, do not support nis...
+    $nis_support = "no";
+
+    # Does the yp dir exists?
+    if( -d $config{nis_dir} ) {
+	$db_dir = "$config{nis_dir}/$domain";
+
+	# Does the yp database dir exists?
+	if( -d $db_dir ) {
+	    $nis_support = "master";
+	} else {
+	    $nis_support = "no";
+	}
+    }
+    printf("$nis_support\n") if( $DEBUG );
+}
+
+# ----------------------
+# proc: check_password( void )
+# desc: Check if the two passwords entered match...
+sub check_password {
+    my($pass_match);
+
+    printf("Calling check_password(void)...\n") if( $DEBUG );
+
+    # Default, the two passwords don't match...
+    $pass_match = 0;
+
+    # Check if the two passwords is the same...
+    # We will get a 'Use of uninitialized value', but that can't be helped...
+    if( $password{0} ) {
+	if( $password{1} ) {
+	    if( $password{0} eq $password{1} ) {
+		# They match
+		$pass_match   = 1;
+	    } else {
+		# No match, make sure we do it again...
+		$pass_match   = 0;
+	    }
+	} else {
+	    # No match, make sure we do it again...
+	    $pass_match = 0;
+	}
+    } else {
+	# No match, make sure we do it again...
+	$pass_match = 0;
+    }
+
+    # Return the value of matching...
+    return( $pass_match );
+}
+
+# ----------------------
+# proc: change_password( user, level, action )
+# desc: Change password for a user or group...
+sub change_password {
+    # name      - What user to change password for
+    # level     - What to change password for
+    #             user
+    #             group
+    # action    - What action to preform...
+    #             add
+    #             edit
+    local($name, $level, $action) = @_;
+    my($i, $chpass_f, $chpass_e, $chpass_l);
+
+    printf("Calling change_password($name, $level, $action)...\n") if( $DEBUG );
+
+    # Just make sure we have choosen a user/group...
+    if(! $name ) {
+	if( $level eq 'user' ) {
+	    printf("\n  ERROR: No user selected...\n");
+	} elsif( $level eq 'group' ) {
+	    printf("\n  ERROR: No group selected...\n");
+	}
+
+	return;
+    }
+
+    # Create the window...
+    if( $level eq 'user' ) {
+	$change_passwd_window = $main_window_users->Toplevel;
+    } elsif( $level eq 'group' ) {
+	$change_passwd_window = $main_window_groups->Toplevel;
+    }
+
+    # Configure the window...
+    $change_passwd_window->title("Edit passwd for $name");
+    $change_passwd_window->iconname('EditPasswd');
+
+    # Create the Main buttons...
+    &main_buttons($change_passwd_window, 'change');
+
+    # Prepare the Input gadgets...
+    $chpass_inputs  = $change_passwd_window->Frame;
+    @pl = (-side   => 'left',
+	   -expand => 'yes',
+	   -fill   => 'x',
+	   -padx   => '.5c',
+	   -pady   => '2'
+    );
+    $chpass_inputs->pack(@pl);
+
+    # Create the Input buttons...
+    foreach $i (0, 1) {
+	$chpass_f{$i} = $chpass_inputs->Frame(-bd => 1);
+	$chpass_e{$i} = $chpass_f{$i}->Entry(-relief => 'sunken', -width => 15);
+	$chpass_l{$i} = $chpass_f{$i}->Label();
+
+	$chpass_f{$i}->pack(-side => 'top', -fill => 'x');
+	$chpass_e{$i}->pack(-side => 'right');
+	$chpass_l{$i}->pack(-side => 'left');
+
+	$chpass_e{$i}->focus if $i == 1;
+    }
+
+    # Configure the input gadgets...
+    $chpass_l{0}->configure(-text => 'Encrypted password:', -underline => 0);
+    $chpass_l{1}->configure(-text => 'Password:',           -underline => 0);
+
+    $chpass_e{0}->configure(-textvariable => \$crypted_password);
+    $chpass_e{1}->configure(-textvariable => \$password{0}, -show => '*');
+
+    # Bind some shortcuts...
+    emacs_bindnings($chpass_e{0});
+    emacs_bindnings($chpass_e{1});
+
+    # Save some variables so that they won't 'dissapere'...
+    $chpass_username = $name;
+
+    $chpass_e{0}->bind('<Return>' => sub{$chpass_e{1}->focus});
+    $chpass_e{1}->bind('<Return>' => sub{
+	if(! check_password() ) {
+	    $chpass_l{1}->configure(-text         => 'Verify:');
+	    $chpass_e{1}->configure(-textvariable => \$password{1});
+	    $chpass_e{1}->bind('<Return>' => sub{
+		if( &check_password() ) {
+		    $change_passwd_window->destroy;
+		    undef($change_passwd_window);
+
+		    # Encrypt the password...
+		    $crypted_password = &crypt_password($password{0});
+
+		    # Zero the two password variables...
+		    $password{0} = "";
+		    $password{1} = "";
+
+		    # Update the passwd variable list...
+		    &exchange_password($chpass_username, $crypted_password);
+
+		    &tick_override($crypted_password);
+		}
+	    });
+	} else {
+	    # Zero the two password variables...
+	    $password{0} = "";
+	    $password{1} = "";
+
+	    $chpass_l{1}->configure(-text         => 'Password:');
+	    $chpass_e{1}->configure(-textvariable => \$password{0});
+	}
+    });
+}
+
+# ----------------------
+# proc: crypt_password( password )
+# desc: Crypt the given password...
+sub crypt_password {
+    # passwd - Password to crypt
+    local($passwd) = @_;
+
+    printf("Calling crypt_password($passwd)...\n") if( $DEBUG );
+
+    if( $config{passwd_bits} == 7 ) {
+	$BITRATE = 127;
+    } else {
+	$BITRATE = 255;
+    }
+
+    srand();
+    @seed_0  = split(/\./, rand($BITRATE));
+    sleep(1);
+    @seed_1  = split(/\./, rand($BITRATE));
+    $seed[0] = $seed_0[0];
+    $seed[1] = $seed_1[1];
+
+    for( $i = 0; $i != 2; $i++) {
+	while( ($seed[$i] > 65 && $seed[$i] < 90) || ($seed[$i] > 97 && $seed[$i] < 122) ) {
+	    @seed_1   = split(/\./, rand($BITRATE));
+	    $seed[$i] = $seed_1[0]
+	}
+
+	$seed[$i] = substr( chr($seed[$i]), 0, 1);
+    }
+
+    $salt = $seed[0] . $seed[1];
+
+    return( crypt($passwd, $salt) );
+}
+
+# ----------------------
+# proc: read_passwd_file( void )
+# desc: Read in the passwd file...
+sub read_passwd_file {
+    my(@entry, @temp) = ();
+    my($line, $tmp, $number);
+
+    printf("Calling read_passwd_file(void)...\n") if( $DEBUG );
+
+    # This is the number of users in the passwd file...
+    $number_of_users = 0;
+
+    # First check if we are a slave ('+' in the passwd file)...
+    open(PASSWD, $config{passwd_file}) || die "Could not open $config{passwd_file}, $!\n";
+    while(! eof(PASSWD) ) {
+	$line = <PASSWD>;
+#	next if( $line !~ /^[a-zA-Z0-9]/ );
+	chomp($line);
+
+	@temp = split(':', $line);
+
+	# Is this a NIS slave?
+	if( $nis_support ne "master" ) {
+	    if( $temp[0] eq '+' ) {
+		$nis_support = "slave";
+	    } else {
+		$nis_support = "no";
+	    }
+	}
+
+	# Remember the passwd line...
+	$tmp = sprintf("%0.5d", $number_of_users);
+	$passwd_line{$number_of_users} = $line . ":$tmp";
+
+	# Remember the UID's...
+	push( @UIDS, $temp[2] );
+
+	printf("  %0.5d. %s\n", $tmp, $passwd_line{$number_of_users}) if( $DEBUG );
+	$number_of_users++;
+    }
+
+    # Zero the variables we do not longer need...
+    $number = $number_of_users;
+    while( $passwd_line{$number} ) {
+	$passwd_line{$number} = "";
+	$number++;
+    }
+
+    printf("  Number of users:  %5d\n", $number_of_users) if( $DEBUG );
+
+    # Close the passwd file...
+    close(PASSWD);
+}
+
+# ----------------------
+# proc: read_shadow_file( void )
+# desc: Read in the shadow file...
+sub read_shadow_file {
+    my($i, $j, $shadow_line);
+    my(@shad, @pass) = ();
+
+    printf("Calling read_shadow_file(void)...\n") if( $DEBUG );
+
+    # Open the shadow file
+    open(SHADOW, $config{shadow_passwd}) || printf("\n  WARNING: Could not open $config{shadow_passwd}, $!\n");
+
+    # Read the shadow file line by line...
+    $i = 0;
+    while(! eof(SHADOW) ) {
+	$shadow_line{$i} = <SHADOW>;
+	chomp($shadow_line{$i});
+
+	$i++;
+    }
+
+    # Close the shadow file...
+    close(SHADOW);
+
+    # Go threw all the passwd lines, exchanging the 'x' password, with the encrypted password from the shadow file...
+    $i = 0;
+    while( $passwd_line{$i} ) {
+	@pass = split(':', $passwd_line{$i});
+
+	$j = 0;
+	while( $shadow_line{$j} ) {
+	    @shad = split(':', $shadow_line{$j});
+
+	    if( $pass[0] eq $shad[0] ) {
+		printf("  %0.5d. %s\n", $i, $shadow_line{$j}) if( $DEBUG );
+		$passwd_line{$i} = "$pass[0]\:$shad[1]\:$pass[2]\:$pass[3]\:$pass[4]\:$pass[5]\:$pass[6]\:$pass[7]";
+	    }
+
+	    $j++;
+	}
+
+	$i++;
+    }
+}
+
+# ----------------------
+# proc: read_group_file( void )
+# desc: Read in the group file...
+sub read_group_file {
+    my($gid, $number);
+    my(@line) = ();
+
+    printf("Calling read_group_file(void)...\n") if( $DEBUG );
+
+    # This is the number of groups in the group file...
+    $number_of_groups = 0;
+
+    # Open the shadow file
+    open(GROUP, $config{group_file}) || die "Could not open $config{group_file}, $!\n";
+    while(! eof(GROUP) ) {
+	$line = <GROUP>;
+	chomp($line);
+
+	# Remember the group line...
+	$group_line{$number_of_groups} = $line;
+
+	# Remember the GID's...
+	$gid = (split(':', $line))[2];
+	push( @GIDS, $gid);
+
+	printf("  %0.5d. %s\n", $number_of_groups, $group_line{$number_of_groups}) if( $DEBUG );
+	$number_of_groups++;
+    }
+
+    # Zero the variables we do not longer need...
+    $number = $number_of_groups;
+    while( $group_line{$number} ) {
+	$group_line{$number} = "";
+	$number++;
+    }
+
+    printf("  Number of groups: %5d\n", $number_of_groups) if( $DEBUG );
+
+    # Close the group file...
+    close(GROUP);
+}
+
+# ----------------------
+# proc: read_gshadow_file( void )
+# desc: Read in the group shadow file...
+sub read_gshadow_file {
+    my($i, $j, $shadow_line);
+    my(@shad, @pass) = ();
+
+    printf("Calling read_gshadow_file(void)...\n") if( $DEBUG );
+
+    # Open the shadow file
+    if(! open(GSHADOW, $config{shadow_group}) ) {
+	printf("  WARNING: Could not open $config{shadow_group}, $!\n");
+	return( 1 );
+    }
+
+    # Read the shadow file line by line...
+    $i = 0;
+    while(! eof(GSHADOW) ) {
+	$gshadow_line{$i} = <GSHADOW>;
+	chomp($gshadow_line{$i});
+
+	$i++;
+    }
+
+    # Close the shadow file...
+    close(GSHADOW);
+
+    # Go through all the passwd lines, exchanging the 'x' password, with the encrypted password from the shadow file...
+    $i = 0;
+    while( $group_line{$i} ) {
+	@grp = split(':', $group_line{$i});
+
+	$j = 0;
+	while( $gshadow_line{$j} ) {
+	    @shad = split(':', $gshadow_line{$j});
+
+	    # Make sure that perl does not complain...
+	    $grp[0]  = "" if(! $grp[0] );
+	    $shad[0] = "" if(! $shad[0] );
+
+	    if( $grp[0] eq $shad[0] ) {
+		printf("  %0.5d. %s\n", $i, $gshadow_line{$j}) if( $DEBUG );
+		$group_line{$i}  = "$grp[0]\:$shad[1]\:" if( $shad[1] );
+
+		if( defined( $grp[2] ) ) {
+		    $group_line{$i} .= "$grp[2]\:";
+		} else {
+		    $group_line{$i} .= "\:";
+		}
+
+		if( defined($grp[3]) ) {
+		    $group_line{$i} .= "$grp[3]";
+		} else {
+		    $group_line{$i} .= "\:";
+		}
+	    }
+
+	    $j++;
+	}
+
+	$i++;
+    }
+}
+
+# ----------------------
+# proc: read_shell_file( void )
+# desc: Read in the shell file...
+sub read_shell_file {
+    my($i, $temp);
+    $i = 0;
+
+    printf("Calling read_shell_file(void)...\n") if( $DEBUG );
+
+    # Open the shell file
+    open(SHELL, $config{shells})
+	|| printf("\n  WARNING: Could not open $config{shells}, $!\n");
+    while(! eof(SHELL) ) {
+	$temp = <SHELL>;
+	chomp($temp);
+
+	next if( $temp =~ /^\#/ );
+
+	$shells_line{$i} = $temp;
+	$i++;
+    }
+
+    # Close the shell file...
+    close(SHELL);
+}
+
+# ----------------------
+# proc: read_printcap( void )
+# desc: Find all the printers we can print to
+sub read_printcap {
+    my($i, $line);
+
+    open(PRINTCAP, "/etc/printcap") || printf("Could not open /etc/printcap, $!\n");
+
+    $i = 0;
+    while(! eof(PRINTCAP) ) {
+	$line = <PRINTCAP>;
+	next if $line =~ /^#/;        # Skip comments
+	next if $line =~ /^$/;        # Skip emtpy lines
+	next if $line =~ /^\s+/;      # Skip lines whith space/tab as first char
+	chop($line);
+
+	$printer_line{$i} = (split(/\|/, $line))[0];
+	$i++;
+    }
+
+    close( PRINTCAP );
+}
+
+# ----------------------
+# proc: read_nis( void )
+# desc: Load the NIS/YP database
+sub read_nis {
+    my($filename, $i, $k, $v, $db, %hash, %tmp);
+
+    printf("Calling read_nis(void)...\n") if( $DEBUG );
+
+    # Open the NIS/YP database...
+    $filename = "$config{nis_dir}/$domain/passwd.byname";
+    $db = tie( %hash, 'GDBM_File', $filename, &GDBM_READER, 0640 )
+	|| printf("  WARNING: Cannot open file '$filename',\n    $!\n");
+
+    # Remember the contents of the file
+    $i = 0;
+    while( ($k, $v) = each %hash ) {
+	$passwd_line_nis{$k} = $v;
+	printf("  %0.5d. $passwd_line_nis{$k}\n", $i) if( $DEBUG );
+
+	$i++;
+    }
+
+    undef $db;
+    untie %hash;
+
+    $number_of_nis_entries = $i;
+
+    $filename = "$config{nis_dir}/$domain/passwd.byuid";
+    $db = tie( %hash, 'GDBM_File', $filename, &GDBM_READER, 0640 )
+	|| printf("  WARNING: Cannot open file '$filename',\n    $!\n");
+
+    undef $db;
+    untie %hash;
+}
+
+# ----------------------
+# proc: read_tcp_quota( username )
+# desc: Get the TCPQuota points
+sub read_tcp_quota {
+    local($username) = @_;
+    local($Msql::QUIET) = 1;
+    local($i);
+
+    if(! $username ) {
+	$username = 'all';
+    }
+
+    printf("Calling read_tcp_quota($username)...\n") if( $DEBUG );
+
+    $CF_FILE="tcpquota.cf";
+    %cf=(); # config array.
+    &get_config_tcp("/etc/tcpquota/$CF_FILE", "xedit-users");
+
+    if( $config{msql_server} ) {
+	$SERVER = $config{msql_server};
+    } else {
+	$SERVER = $cf{'SERVER'};
+    }
+
+    # Open up the msql connection...
+    $dbh = Msql->connect( $SERVER, 'tcpquota');
+    if(! $dbh ) {
+	$main_window->Dialog(-text           => "Could not connect to the mSQL database 'tcpquota' at '$SERVER'...",
+			     -bitmap         => 'To bad',
+			     -default_button => 'cancel'
+	)->Show;
+
+	$config{display_quota} = 0;
+	return( 1 );
+    }
+
+    if( $username eq "all" ) {
+	# Query the database.
+	$query = "select * from tcptab";
+	$sth = $dbh->query($query) || printf("\n  WARNING: Error when query...");
+
+	# First get the TCP quota value...
+	while( ($user,$sec) = $sth->fetchrow ) {
+	    if( $user ) {
+		if( $sec =~ /^-/ ) {
+		    # Remove the leading '-'.
+		    $sec = substr( $sec, 1 );
+
+		    $cost = calculate_cost( $sec );
+
+		    # Add the '-' again...
+		    $cost = "-$cost";
+		    $sec  = "-$sec";
+		} else {
+		    if( $sec =~ /^\+/ ) {
+			# We have a '+' sign...
+			$sec = substr( $sec, 1 );
+		    }
+
+		    $cost = calculate_cost( $sec );
+		}
+
+		printf("  %8d %4d kronor %s\n", $sec, $cost, $user) if( $DEBUG );
+
+		# Cycle through the passwd entries...
+		$i = 0;
+		do {
+		    if( $passwd_line{$i} ) {
+			@pass = split(':', $passwd_line{$i});
+
+			if( $pass[0] ne '+' ) {
+			    $PASS_CONT = 1;
+
+			    if( $pass[0] eq $user ) {
+				$tcp_quota{$i} = $cost;
+			    }
+			} else {
+			    $PASS_CONT = 0;
+			}
+		    } else {
+			$PASS_CONT = 0;
+		    }
+
+		    $i++;
+		} while( $PASS_CONT );
+	    }
+	}
+
+	# Get the allowence list...
+	# -------------------------
+
+	# Query the database.
+	$query = "select * from allowed";
+	$sth = $dbh->query($query) || printf("\n  WARNING: Error when query...");
+	while( $user = $sth->fetchrow ) {
+	    if( $user ) {
+		# We have a user which is allowed...
+		# Cycle through the passwd entries...
+		$i = 0;
+		do {
+		    if( $passwd_line{$i} ) {
+			@pass = split(':', $passwd_line{$i});
+
+			if( $pass[0] ne '+' ) {
+			    $PASS_CONT = 1;
+
+			    if( $pass[0] eq $user ) {
+				$tcp_quota_allowed{$i} = "Y";
+			    }
+			} else {
+			    $PASS_CONT = 0;
+			}
+		    } else {
+			$PASS_CONT = 0;
+		    }
+
+		    $i++;
+		} while( $PASS_CONT );
+	    }
+	}
+    } else {
+	# Query the database.
+	$query = "select * from tcptab where name like '$username'";
+	$sth = $dbh->query($query)
+	    || printf("\n  WARNING: Error when query...");
+
+	($user,$sec) = $sth->fetchrow;
+	if( $user ) {
+	    if( $sec =~ /^-/ ) {
+		# remove the leading '-'.
+		@a = split(/-/, $sec);
+
+		$cost = calculate_cost($a[1]);
+	    } else {
+		$cost = calculate_cost($sec);
+	    }
+
+#	    print "$sec\t($cost kronor)\t$user\n" if( $DEBUG );
+	} else {
+#	    print "User does not exist in database...\n" if( $DEBUG );
+	}
+    }
+}
+
+# ----------------------
+# proc: save_config_file( void )
+# desc: Save the options config...
+sub save_config_file {
+    printf("Calling save_config_file(void)...\n") if( $DEBUG );
+
+    # Open the config file in $HOME...
+    open(CONF_FILE, ">$HOME/.$CONFIG_FILE") || printf("\n  WARNING: Could not open $HOME/.$CONFIG_FILE, $!\n");
+    foreach $element (sort keys %config) {
+	if( $config{$element} ne $defaults{$element} ) {
+	    # Only change entries that differ from default...
+	    if( $config{$element} eq '0' ) {
+		$line = 'no';
+	    } elsif( $config{$element} eq '1' ) {
+		$line = 'yes';
+	    } else {
+		$line = $config{$element};
+	    }
+
+	    print CONF_FILE "$element = $line\n";
+	}
+    }
+    close(CONF_FILE);
+
+    $edit_options_window->destroy if Exists($edit_options_window);
+    undef($edit_options_window);
+}
+
+# ----------------------
+# proc: save_tcp_quota( username, money )
+# desc: Save the new TCPQuota for the user
+sub save_tcp_quota {
+    local($username, $money) = @_;
+    local($Msql::QUIET) = 1;
+
+    # Leave if we don't have a connection to the Msql database...
+    return if(! $dbh);
+
+    # Just in case it's empty...
+    if(! $money ) {
+	$query         = "select * from tcptab where name like '$username'";
+	$sth           = $dbh->query($query);
+	($user, $old)  = $sth->fetchrow;
+	$money = calculate_cost( $old );
+    }
+
+    printf("Calling save_tcp_quota($username, $money)...\n") if( $DEBUG );
+
+    # Should we add or remove quota points?
+    if( $money =~ /^-/ ) {
+	$command = "rem";
+
+	# Remove the '-' sign...
+	$money = substr( $money, 1 );
+    } else {
+	$command = "add";
+    }
+
+    # Calculate how much quota points this amount of money is...
+    $quota = $money * 600;
+
+    $query         = "select * from tcptab where name like '$username'";
+    $sth           = $dbh->query($query);
+    ($user, $old)  = $sth->fetchrow;
+    if(! $user ) {
+	# New user...
+
+	# Inserte the user and his/her quota in the database...
+	$query = "insert into tcptab (name,quota) values ('$username',$quota)";
+	$sth   = $dbh->query($query)
+	    || print "TCPQuota: Error when inserting new user.\n";
+
+	printf("  Inserted new user `$username'.\n") if( $DEBUG );
+    } else {
+	# Known user...
+	local($old);
+	$old = 0;
+
+	# Add quota points...
+	if( $command eq 'add' ) {
+	    # Find the total quota...
+	    ($dummy,$old) = $sth->fetchrow;
+	    if( $old ) {
+		$total = $old + $quota;
+	    } else {
+		$total = $quota;
+	    }
+	}
+
+	# Remove quota points...
+	if( $command eq 'rem' ) {
+	    # Find the total quota...
+	    ($dummy,$old) = $sth->fetchrow;
+	    if( !$old ) {
+		$old = 0;
+	    }
+
+	    $total        = $old - $quota;
+	}
+
+	# Set quota points...
+	if( $command eq 'set' ) {
+	    $total        = $quota;
+	}
+
+	# Update the quota value...
+	$query = "update tcptab set quota=$total where name like '$username'";
+	$sth   = $dbh->query($query)
+	    || printf("Error when updating table tcptab.\n") if( $DEBUG );
+
+	printf("  Changed quota for user `$username'\n") if( $DEBUG );
+    }
+
+    if( $disallow_user ) {
+	# Disallow user from using the TCP link...
+	$query = "delete from allowed where name like '$username'";
+
+	$sth   = $dbh->query($query);
+	if(! $sth ) {
+	    $main_window->Dialog(-text           => "Could not update the allowed database...",
+				 -bitmap         => 'To bad',
+				 -default_button => 'cancel'
+	    )->Show;
+	}
+
+	$tcp_quota_allowed{$userno} = "N";
+	printf("  Disallowed the user $username...\n") if( $DEBUG );
+    } else {
+	# Make sure the user is allowed to use the TCP link...
+	# Ignore any errors... Who cares?
+	$query = "insert into allowed (name) values ('$username')";
+	$sth   = $dbh->query($query);
+	printf("  Added user $username to the allowed list...\n") if( $DEBUG );
+    }
+
+    # Check to see if the user have 0 in quota, in that case, remove user...
+    $query         = "select * from tcptab where name like '$username'";
+    $sth           = $dbh->query($query);
+    ($user, $old)  = $sth->fetchrow;
+    if(! $old ) {
+	$query = "delete from tcptab where name like '$username'";
+	$sth   = $dbh->query($query);	
+    }
+
+    # Clear some of the global variables...
+    $disallow_user = 1;
+    $tcp_quota_new = "";
+    $tcp_quota_allowed{$userno} = "";
+}
+
+# ----------------------
+# proc: save_file_quota( void ) ERROR!
+# desc: Save the new file quota for the filesystems
+sub save_file_quota {
+    printf("Calling save_file_quota(void)...\n") if( $DEBUG );
+}
+
+# ----------------------
+# proc: save_nis( user_line, action ) ERROR!
+# desc: Save the new master NIS database
+sub save_nis {
+    local($line, $action) = @_;
+    my($filename, $new_line, $i, $tmp1, $tmp2, $res, %hash, @temp, $passwd);
+
+    if( $line ) {
+	chop($line);
+    } else {
+	$line = 'new';
+    }
+
+    printf("Calling save_nis($line, $action)...\n") if( $DEBUG );
+
+    # Show the wait box again...
+    $wait_box->Show;
+    $wait_box->configure(-txt1 => 'NIS/YP');
+
+    # ===========================================
+
+    # Open the NIS/YP database...
+    &wait_box('Saving the NIS/YP database...');
+
+    printf("  Saving the passwd.byname file...\n") if( $DEBUG );
+    $filename = "$config{nis_dir}/$domain/passwd.byname";
+    $db = tie( %hash, 'GDBM_File', $filename, &GDBM_WRCREAT, 0640 )
+	|| die "Cannot open file '$filename', $!\n";
+
+    if( ($action ne 'new') && ($line ne 'new') ) {
+	# Add to database...
+
+	@temp = split(':', $line);
+	if( $temp[0] ) {
+	    # Put together the new line (we have extra info at the end we don't want here)
+	    if( ($action eq 'add') || ($action eq 'update') ) {
+		$tmp2 = "";
+		$new_line  = "$temp[0]\:";
+
+		if( ($config{shadow} eq "yes") || ($config{shadow} eq '1') ) {
+		    $i = 0;
+		    do {
+			if( $shadow_line{$i} ) {
+			    $SHAD_CONT = 1;
+
+			    $tmp1 = (split(':', $shadow_line{$i}))[0];
+
+			    if( $temp[0] eq $tmp1 ) {
+				$passwd = (split(':', $shadow_line{$i}))[1];
+			    }
+			} else {
+			    $SHAD_CONT = 0;
+			}
+
+			$i++;
+		    } while( $SHAD_CONT );
+		}
+
+		$tmp2 = $temp[1] if(! $passwd );
+		$new_line = "$temp[0]\:$tmp2\:$temp[2]\:$temp[3]\:$temp[4]\:$temp[5]\:$temp[6]";
+	    }
+
+	    # Store/Delete the value...
+	    if( $action eq 'add' ) {
+		$res = $db->STORE($temp[0], $new_line);
+		printf("    STR (n): $res ($temp[0] - $new_line)\n") if( $DEBUG );
+
+		# Update variable...
+		$number_of_nis_entries++;
+	    } elsif( $action eq 'del') {
+		$res = $db->DELETE($temp[0]);
+		printf("    DEL (n): $res ($temp[0])\n") if( $DEBUG );
+
+		# Update variable...
+		$number_of_nis_entries--;
+	    } elsif( $action eq 'update' ) {
+		# First delete the entry...
+		$res = $db->DELETE($temp[0]);
+		printf("    DEL (n): $res ($temp[0])\n") if( $DEBUG );
+
+		# ...then store the new line...
+		$db->STORE($temp[0], $new_line);
+		printf("    STR (n): $res ($temp[0] - $new_line)\n") if( $DEBUG );
+	    } else {
+		printf("ERROR: Unknown action called at 'save_nis()'\n");
+		return( -1 );
+	    }
+	}
+    } else {
+	# New database...
+
+	$i = 0;
+	do {
+	    if( $passwd_line{$i} ) {
+		@pass = split(':', $passwd_line{$i});
+
+		if( $pass[0] ) {
+		    $PASS_CONT = 1;
+
+		    # Only add the user if the UID is between '$config{min_nis_uid}' and '$config{max_nis_uid}'
+		    if( ($pass[2] > $config{min_nis_uid}) && ($pass[2] < $config{max_nis_uid}) ) {
+			# Add the password...
+			if( $config{shadow} eq 'yes' || $config{shadow} eq 1 ) {
+			    $passwd = (split(':', $shadow_line{$i}))[1];
+			} else {
+			    $passwd = $pass[1];
+			}
+
+			$res = $db->STORE($pass[0], "$pass[0]\:$passwd\:$pass[2]\:$pass[3]\:$pass[4]\:$pass[5]\:$pass[6]");
+
+			# Only print the result from the store, if less than 0 (= error)
+			if( ($res < 0) && $DEBUG ) {
+			    printf("    STR (n): $res ($pass[0])\n");
+			}
+		    }
+		} else {
+		    $PASS_CONT = 0;
+		}
+	    } else {
+		$PASS_CONT = 0;
+	    }
+
+	    $i++;
+	} while( $PASS_CONT );
+    }
+
+    undef $db;
+    untie %hash;
+
+    # ===========================================
+
+    # Open the NIS/YP database...
+    printf("  Saving the passwd.byuid  file...\n") if( $DEBUG );
+    $filename = "$config{nis_dir}/$domain/passwd.byuid";
+    $db = tie( %hash, 'GDBM_File', $filename, &GDBM_WRCREAT, 0640 )
+	|| die "Cannot open file '$filename', $!\n";
+
+    if( $action ne 'new' ) {
+	@temp = split(':', $line);
+	if( $temp[2] ) {
+	    # Put together the new line (we have extra info at the end we don't want here)
+	    if( ($action eq 'add') || ($action eq 'update') ) {
+		$tmp2 = "";
+		$new_line  = "$temp[0]\:";
+		if( $config{shadow} eq "yes" || $config{shadow} == 1 ) {
+		    $i = 0;
+		    while( $shadow_line{$i} ) {
+			$tmp1 = (split(':', $shadow_line{$i}))[0];
+			if( $temp[0] eq $tmp1 ) {
+			    $tmp2 = (split(':', $shadow_line{$i}))[1];
+			}
+
+			$i++;
+		    }
+		}
+		$tmp2 = $temp[1] if(! $tmp2 );
+		$new_line .= "$tmp2\:$temp[2]\:$temp[3]\:$temp[4]\:$temp[5]\:$temp[6]";
+	    }
+
+	    # Store/Delete the value...
+	    if( $action eq 'add' ) {
+		$res = $db->STORE($temp[2], $new_line);
+		printf("    STR (u): $res ($temp[2] - $new_line)\n") if( $DEBUG );
+	    } elsif( $action eq 'del') {
+		$res = $db->DELETE($temp[2]);
+		printf("    DEL (u): $res ($temp[2])\n") if( $DEBUG );
+	    } elsif( $action eq 'update' ) {
+		# First delete the entry...
+		$res = $db->DELETE($temp[2]);
+		printf("    DEL (u): $res ($temp[2])\n") if( $DEBUG );
+
+		# ...then store the new line...
+		$res = $db->STORE($temp[2], $new_line);
+		printf("    STR (u): $res ($temp[2])\n") if( $DEBUG );
+	    } else {
+		printf("ERROR: Unknown action called at 'save_nis()'\n");
+	    }
+	}
+    } else {
+	# New database...
+	$i = 0;
+	do {
+	    if( $passwd_line{$i} ) {
+		@pass = split(':', $passwd_line{$i});
+
+		if( $pass[0] ) {
+		    $PASS_CONT = 1;
+
+		    # Only add the user if the UID is between '$config{min_nis_uid}' and '$config{max_nis_uid'
+		    if( ($pass[2] > $config{min_nis_uid}) && ($pass[2] < $config{max_nis_uid}) ) {
+			# Add the password...
+			if( $config{shadow} eq 'yes' || $config{shadow} eq 1 ) {
+			    $passwd = (split(':', $shadow_line{$i}))[1];
+			} else {
+			    $passwd = $pass[1];
+			}
+
+			$res = $db->STORE($pass[2], "$pass[0]\:$passwd\:$pass[2]\:$pass[3]\:$pass[4]\:$pass[5]\:$pass[6]");
+
+			# Only print the result from the store, if less than 0 (= error)
+			if( ($res < 0) && $DEBUG ) {
+			    printf("    STR (u): $res ($pass[2])\n");
+			}
+		    }
+		} else {
+		    $PASS_CONT = 0;
+		}
+	    } else {
+		$PASS_CONT = 0;
+	    }
+
+	    $i++;
+	} while( $PASS_CONT );
+    }
+
+    undef $db;
+    untie %hash;
+}
+
+# ----------------------
+# proc: create_homedir( window, directory )
+# desc: Create home directory
+sub create_homedir {
+    # window - What window should we use as base for a dialog
+    # user   - User to create home directory for
+    local($window, $dir) = @_;
+    my($dialog, $file);
+    my($cancel) = 'Oopps';
+
+    printf("Calling create_homedir($window, $dir)...\n") if( $DEBUG );
+
+    $default_dir_mode = 0755;
+
+    # Create the error dialog, just in case...
+    $dialog = $window->Dialog(-bitmap         => 'error',
+			      -default_button => $cancel,
+			      -buttons        => [$cancel]
+    );
+
+    # Make sure the home directory exist...
+    if(! -d $dir ) {
+	create_leading_dirs( $dir, $default_dir_mode );
+
+	# ---------------------------------------------------------------
+
+	# Change owner on home dir...
+	if( chown($user_id, $primary_group_id, $dir) ) {
+#	    printf("  Changing owner on         $dir\n") if( $DEBUG );
+	} else {
+	    printf("  Could not change owner on $dir\n") if( $DEBUG );
+	}
+
+	# Change mode on home dir...
+	if( chmod($default_dir_mode, $dir) ) {
+#	    printf("  Changing mode on          $dir\n") if( $DEBUG );
+	} else {
+	    printf("  Could not change mode on  $dir\n") if( $DEBUG );
+	}
+
+	# ---------------------------------------------------------------
+
+	# Find files in the skeleton directory...
+	if( -d $config{skel_dir} ) {
+	    # Get the files from the dir...
+	    find(\&wanted, $config{skel_dir});
+
+	    # Copy the files from the $config{skel_dir} directory...
+	    foreach $source_file (@FILES) {
+		# Remove the skel path...
+		$file =  $source_file;
+		$file =~ s@$config{skel_dir}/@@;
+
+		# Destination file/dir...
+		$dest_file   =  "$dir/$file";
+
+		# Check for directory...
+		if( -d $source_file ) {
+		    # Source is a directory...
+		    if( mkdir($dest_file, $default_dir_mode) ) {
+#			printf("  Creating directory        $dest_file\n") if( $DEBUG );
+#		    } else {
+#			printf("  Could not create dir      $dest_file, $!\n") if( $DEBUG );
+		    }
+		} else {
+		    # Source is a file...
+#		    printf("  Copying file              $source_file\n") if( $DEBUG );
+
+		    # Copy the source file to the destination...
+		    copy($source_file, $dest_file);
+		}
+
+		# Change owner of destination...
+		chown($user_id, $primary_group_id, $dest_file);
+	    }
+	}
+    } else {
+	printf("  User dir '$dir' already exists...\n") if( $DEBUG );
+    }
+}
+
+# ----------------------
+# proc: remove_homedir( dir )
+# desc: Remove the home directory totaly...
+sub remove_homedir {
+    local($dir) = @_;
+    my($counter, $not_done, $file);
+
+    printf("Calling remove_homedir($dir)...\n") if( $DEBUG );
+
+    # Find the files in the users home dir...
+    $not_done = 1; $counter = 0;
+    while( $not_done ) {
+	$counter++;
+
+	if( -d $dir ) {
+	    find(\&wanted, $dir);
+	    foreach $file (@FILES) {
+		# Is it a file or directory?
+		if( -d $file ) {
+		    # Dir...
+		    if( rmdir($file) ) {
+			printf("  Deleted the directory       $file\n") if( $DEBUG );
+		    } else {
+			printf("  Could not delete directory: $file\n") if( $DEBUG );
+		    }
+		} else {
+		    # File...
+		    if( unlink($file) ) {
+			printf("  Deleted the file            $file\n") if( $DEBUG );
+		    } else {
+			printf("  Could not delete the file   $file\n") if( $DEBUG );
+		    }
+		}
+	    }
+
+	    if( rmdir($dir) ) {
+		printf("  Deleted the directory       $dir\n") if( $DEBUG );
+	    } else {
+		printf("  Could not delete directory: $dir\n") if( $DEBUG );
+	    }
+	} else {
+	    printf("  Could not find directory:   $dir\n") if( $DEBUG );
+
+	    # We don't have any more files in the directory, break here...
+	    $not_done = 0;
+	    next;
+	}
+
+	if( $counter > 5 ) {
+	    # Only try five times, if we havent succeeded, break...
+	    $not_done = 0;
+	    next;
+	}
+    }
+
+    # Undefine this variable list, so we can reuse the memory space...
+    undef(@FILES);
+}
+
+# ----------------------
+# proc: main_menu( window )
+# desc: Create the main menu, so that we can add the sub-menus...
+sub main_menu {
+    # window - In what window to put the menu...
+    local($window) = @_;
+
+    printf("Calling main_menu($window)...\n") if( $DEBUG );
+
+    my($config, $cm, $cc);
+    my(%entry) = ();
+
+    $entry{edcfg}              = 'Edit paths/files';
+    $entry{edopt}              = 'Edit options';
+    $entry{edsizes}            = 'Edit variables';
+    # ----------------------------------------
+    $entry{shadow}             = 'Support shadow';
+    $entry{quota}              = 'Support quota';
+    $entry{nis}                = 'Support nis/yp';
+    $entry{badnames}           = 'Support bad names';
+    $entry{homestype}          = 'Homes sub dir';
+    $entry{nisatend}           = 'Keep NIS at end';
+    $entry{uidnumber}          = 'Add user in UID number order';
+    $entry{emptypasswd}        = 'Allow empty passwords';
+    $entry{save}               = 'Save config';
+    $entry{quit}               = 'Quit';
+    # ----------------------------------------
+    $entry{editusers}          = 'Edit users';
+    $entry{editgroups}         = 'Edit groups';
+    $entry{editquota}          = 'Edit quota';
+    # ----------------------------------------
+    $entry{sort_by}            = 'Sort by';
+    $entry{load_passwd}        = 'Load the passwd file';
+    $entry{load_nisdb}         = 'Load the NIS database';
+    $entry{load_group}         = 'Load the group file';
+    #
+    $entry{save_passwd}        = 'Save the passwd file';
+    $entry{save_nisdb}         = 'Save the NIS database';
+    $entry{save_group}         = 'Save the group file';
+    #
+    $entry{reload_list}        = 'Reload the listbox';
+    $entry{print_list_file}    = 'to file';
+
+    # Create the menu frame...
+    $menu_frame = $window->Frame(-relief => 'raised', -borderwidth => 2);
+    $menu_frame->pack(-fill => 'x');
+
+    if( $config{main_func} ne 'quotas' ) {
+	# Create the 'Config' menu...
+	$menu1 = $menu_frame->Menubutton(-text => 'Config', -underline => 0, -relief => 'raised');
+	$menu1->command(-label => $entry{edcfg},       -underline => 5, -command => \&edit_paths);
+	$menu1->command(-label => $entry{edopt},       -underline => 5, -command => \&edit_options);
+	$menu1->command(-label => $entry{edsizes},     -underline => 5, -command => \&edit_list_sizes);
+	$menu1->separator;
+	$menu1->cascade(-label => $entry{shadow},      -underline => 8);
+	$menu1->cascade(-label => $entry{quota},       -underline => 8);
+	$menu1->cascade(-label => $entry{nis},         -underline => 8);
+	$menu1->cascade(-label => $entry{badnames},    -underline => 8);
+	$menu1->cascade(-label => $entry{homestype},   -underline => 8);
+	$menu1->cascade(-label => $entry{nisatend},    -underline => 0);
+	$menu1->cascade(-label => $entry{uidnumber},   -underline => 0);
+	$menu1->cascade(-label => $entry{emptypasswd}, -underline => 0);
+	$menu1->separator;
+
+	$menu1->command(-label => $entry{save}, -underline => 0, -command => \&save_config_file);
+	$menu1->command(-label => $entry{quit}, -underline => 0, -command => [$main_window_users => 'destroy']);
+
+	# Create the Shadow sub-menu...
+	$shad_sub = $menu1->cget(-menu)->Menu(-tearoff => 0);
+	$menu1->entryconfigure($entry{shadow},  -menu => $shad_sub);
+	$shad_sub->radiobutton(-label    => "Yes",
+			       -variable => \$config{shadow},
+			       -value    => 1
+	);
+	$shad_sub->radiobutton(-label    => "No",
+			       -variable => \$config{shadow},
+			       -value    => 0
+	);
+
+	# Create the Quota sub menu...
+	$quot_sub = $menu1->cget(-menu)->Menu(-tearoff => 0);
+	$menu1->entryconfigure($entry{quota}, -menu => $quot_sub);
+	$quot_sub->radiobutton(-label    => "Yes",
+			       -variable => \$quota_support,
+			       -value    => 1
+	);
+	$quot_sub->radiobutton(-label    => "No",
+			       -variable => \$quota_support,
+			       -value    => 0
+	);
+
+	# Create the Nis sub menu...
+	$nis_sub = $menu1->cget(-menu)->Menu(-tearoff => 0);
+	$menu1->entryconfigure($entry{nis}, -menu => $nis_sub);
+	$nis_sub->radiobutton(-label    => "No",
+			      -variable => \$nis_support,
+			      -value    => 'no'
+	);
+	$nis_sub->radiobutton(-label    => "master",
+			      -variable => \$nis_support,
+			      -value    => 'master'
+	);
+	$nis_sub->radiobutton(-label    => "slave",
+			      -variable => \$nis_support,
+			      -value    => 'slave'
+	);
+
+	# Create the bad-names sub menu...
+	$badnames_sub = $menu1->cget(-menu)->Menu(-tearoff => 0);
+	$menu1->entryconfigure($entry{badnames}, -menu => $badnames_sub);
+	$badnames_sub->radiobutton(-label    => "Yes",
+				   -variable => \$config{bad_names},
+				   -value    => 1
+	);
+	$badnames_sub->radiobutton(-label    => "No",
+				   -variable => \$config{bad_names},
+				   -value    => 0
+	);
+
+	# Create the homes type sub menu...
+	$homestype_sub = $menu1->cget(-menu)->Menu(-tearoff => 0);
+	$menu1->entryconfigure($entry{homestype}, -menu => $homestype_sub);
+	foreach $label ('none', 'group', 'letter') {
+	    $homestype_sub->radiobutton(-label    => "$label",
+					-variable => \$config{homes_type},
+					-value    => $label,
+	    );
+	}
+
+	# Create the 'keep nis at end' sub menu...
+	$nisatend_sub = $menu1->cget(-menu)->Menu(-tearoff => 0);
+	$menu1->entryconfigure($entry{nisatend}, -menu => $nisatend_sub);
+	$nisatend_sub->radiobutton(-label    => "Yes",
+				   -variable => \$config{keep_nis_at_end},
+				   -value    => 1
+	);
+	$nisatend_sub->radiobutton(-label    => "No",
+				   -variable => \$config{keep_nis_at_end},
+				   -value    => 0
+	);
+
+	# Create the 'Add user in UID number order' sub menu...
+	$uidnumber_sub = $menu1->cget(-menu)->Menu(-tearoff => 0);
+	$menu1->entryconfigure($entry{uidnumber}, -menu => $uidnumber_sub);
+	$uidnumber_sub->radiobutton(-label    => "Yes",
+				    -variable => \$config{add_user_in_uid_order},
+				    -value    => 1
+	);
+	$uidnumber_sub->radiobutton(-label    => "No",
+				    -variable => \$config{add_user_in_uid_order},
+				    -value    => 0
+	);
+
+	# Create the 'Allow empty passwords' sub menu...
+	$emptypasswd_sub = $menu1->cget(-menu)->Menu(-tearoff => 0);
+	$menu1->entryconfigure($entry{emptypasswd}, -menu => $emptypasswd_sub);
+	$emptypasswd_sub->radiobutton(-label    => "Yes",
+				      -variable => \$config{allow_empty_passwords},
+				      -value    => 1
+	);
+	$emptypasswd_sub->radiobutton(-label    => "No",
+				      -variable => \$config{allow_empty_passwords},
+				      -value    => 0
+	);
+
+	# Some mutual exclusive stuff...
+	$homestype_sub->bind('<Button-1>' => sub{$homestype_sub->invoke(1)});
+
+	# ===== I N V O K E  C O R R E C T  R A D I O B U T T O N =====
+
+	# Invoke the right shadow radio...
+	if( $config{shadow} eq 'yes' || $config{shadow} eq 1){
+	    $shad_sub->invoke(0); } else { $shad_sub->invoke(1); }
+
+	# Invoke the right quota radio...
+	if( $quota_support eq 'yes' ) {
+	    $quot_sub->invoke(0); } else { $quot_sub->invoke(1); }
+
+	# Invoke the right nis radio...
+	if( $nis_support eq 'no' ) {
+	    $nis_sub->invoke(0); } elsif( $nis_support eq 'master' ) {
+	    $nis_sub->invoke(1); } else { $nis_sub->invoke(2); }
+
+	# Invoke the right bad-names radio...
+	if( $config{bad_names} eq 'yes' || $config{bad_names} eq 1 ){
+	    $badnames_sub->invoke(0); } else { $badnames_sub->invoke(1); }
+
+	# Invoke the right letter homes radio...
+	if( $config{homes_type} eq 'none' ){
+	    $homestype_sub->invoke(0); } elsif( $config{homes_type} eq 'group' ) {
+	    $homestype_sub->invoke(1); } else { $homestype_sub->invoke(2); }
+
+	# Invoke the right 'keep nis at end' radio...
+	if( $config{keep_nis_at_end} eq 'yes' || $config{keep_nis_at_end} eq 1 ){
+	    $nisatend_sub->invoke(0); } else { $nisatend_sub->invoke(1); }
+
+	# Invoke the right 'allow empty passwords' radio...
+	if( $config{allow_empty_passwords} eq 'yes' || $config{allow_empty_passwords} eq 1){
+	    $emptypasswd_sub->invoke(0); } else { $emptypasswd_sub->invoke(1); }
+
+	$menu1->pack(-side => 'left');
+    }
+
+    # ----------------------
+
+    if( $config{main_func} ne 'quotas' ) {
+	$menu3 = $menu_frame->Menubutton(-text => 'Files', -underline => 0,  -relief => 'raised');
+
+	# Create the submenu 'Load'...
+	$menu3->cascade(-label => 'Load');
+	$sub_menu1 = $menu3->cget(-menu)->Menu(-tearoff => 0);
+	$menu3->entryconfigure('Load', -menu => $sub_menu1);
+
+	# Create the submenu 'Save'...
+	$menu3->cascade(-label => 'Save');
+	$sub_menu2 = $menu3->cget(-menu)->Menu(-tearoff => 0);
+	$menu3->entryconfigure('Save', -menu => $sub_menu2);
+
+	# Create the submenu 'Print'...
+	$menu3->cascade(-label => 'Print');
+	$sub_menu3 = $menu3->cget(-menu)->Menu(-tearoff => 0);
+	$menu3->entryconfigure('Print', -menu => $sub_menu3);
+
+	# Fill the submenues...
+	if( $config{main_func} eq 'users' ) {
+	    $sub_menu1->command(-label => $entry{load_passwd}, -command =>  \&read_passwd_file);
+	    $sub_menu1->command(-label => $entry{load_nisdb},  -command =>  \&read_nis);
+
+	    $sub_menu2->command(-label => $entry{save_passwd}, -command => sub{
+		&save_passwd_file( '', $main_window_users,  'change');
+
+		# Insert the header...
+		&listbox_user_header($user_listbox);
+
+		# Read in the user/group data to the text widget...
+		&listbox_user($user_listbox);
+	    });
+	    $sub_menu2->command(-label => $entry{save_nisdb},  -command => [\&save_nis, '', 'new']);
+	} else {
+	    $sub_menu1->command(-label => $entry{load_group},  -command =>  \&read_group_file);
+	    $sub_menu2->command(-label => $entry{save_group},  -command => [\&save_group_file, '', 'change']);
+	}
+
+	# Print to file...
+	$i = 0; $sub_menu3->command(    -label => $entry{print_list_file}, -underline => 16, -command => [\&listbox_print, 'file']);
+	while( $printer_line{$i} ) {
+	    $sub_menu3->command(-label => "to $printer_line{$i}", -underline => 16, -command => [\&listbox_print, $printer_line{$i}]);
+	    $i++;
+	}
+
+	$menu3->pack(-side => 'left');
+    }
+
+    if( $config{main_func} eq 'users' ) {
+	$menu3->command(-label => $entry{reload_list}, -command => sub{
+	    # Insert the header...
+	    &listbox_user_header($user_listbox);
+
+	    # Read in the user/group data to the text widget...
+	    &listbox_user($user_listbox);
+	});
+    }
+
+    # ----------------------
+
+    $menu2 = $menu_frame->Menubutton(-text => 'Function', -underline => 0, -relief => 'raised');
+    $menu2->command(-label => $entry{editusers},  -underline => 5, -command => \&main_users);
+    $menu2->command(-label => $entry{editgroups}, -underline => 5, -command => \&main_groups);
+    $menu2->command(-label => $entry{editquota},  -underline => 5, -command => \&main_quotas);
+
+    $menu2->pack(-side => 'left');
+}
+
+# ----------------------
+# proc: listbox_user_header( window )
+# desc: Put some info about the entries in the listbox
+sub listbox_user_header {
+    local($window) = @_;
+    my($entry);
+
+    if(! $window ) {
+	# Keep perl happy, *sigh*
+	$window = "";
+    }
+    
+    printf("Calling listbox_user_header($window)...\n") if( $DEBUG );
+
+    # Create the header...
+    $win_size = 0;
+
+    if( $window ) {
+	# Clear the content in the text widget...
+	$window->delete(0, 'end');
+    }
+
+    if( $DEBUG ) {
+	$entry = sprintf("  No  ") if( $DEBUG < 2 );
+    } else {
+	$entry = "";
+    }
+
+    if( $config{display_quota} eq 'yes' || $config{display_quota} eq 1 ) {
+	$entry    .= size_string( 'right', 'TCPQuota',  ($config{size_quota} + 4));
+	$entry    .= " | ";
+	$win_size += $config{size_quota} + 4;
+    } else {
+	$entry    .= "";
+    }
+
+    # Should we check if the user is in the NIS/YP database?
+    if( ($nis_support eq 'master') && (($config{show_exists_db} eq 'yes') || $config{show_exists_db} == 1) ) {
+	$entry    .= size_string( 'right', 'NIS ', 4);
+	$win_size += 4;
+    }
+
+    if( $config{display_name} eq 'yes' || $config{display_name} eq 1 ) {
+	$entry    .= size_string( 'right', 'Name', $config{size_name});
+	$win_size += $config{size_name};
+    }
+
+    if( $config{display_passwd} eq 'yes' || $config{display_passwd} eq 1 ) {
+	if( $config{display_type_passwd} eq 'crypted' ) {
+	    $entry    .= size_string( 'right', 'Passwd', $config{size_passwd_crypted});
+	    $win_size += $config{size_passwd_crypted};
+	} else {
+	    $entry    .= size_string( 'right', 'Passwd', $config{size_passwd_desc});
+	    $win_size += $config{size_passwd_desc};
+	}
+
+
+    if( $config{display_uid} eq 'yes' || $config{display_uid} eq 1 ) {
+	$entry    .= size_string( 'left', 'UID', $config{size_id_number});
+	$win_size += $config{size_id_number};
+
+	$entry .= "  ";
+    }
+
+    if( $config{display_group} eq 'yes' || $config{display_group} eq 1 ) {
+	if( $config{display_type_group} eq 'number' ) {
+	    $entry    .= size_string( 'left', 'GID',  $config{size_id_number});
+	    $win_size += $config{size_id_number};
+	} else {
+	    $entry    .= size_string( 'right', 'Group', $config{size_id_name});
+	    $win_size += $config{size_id_name};
+	}
+
+	$entry .= "  ";
+    }
+
+    if( $config{display_full} eq 'yes' || $config{display_full} eq 1 ) {
+	$entry    .= size_string( 'right', "Full name", $config{size_fullname});
+	$win_size += $config{size_fullname};
+    }
+
+    if( $config{display_home} eq 'yes' || $config{display_home} eq 1 ) {
+	$entry    .= size_string( 'right', "Home dir", $config{size_homedir});
+	$win_size += $config{size_homedir};
+    }
+
+    if( $config{display_shell} eq 'yes' || $config{display_shell} eq 1 ) {
+	$entry    .= size_string( 'right', "Login shell", $config{size_shell});
+	$win_size += $config{size_shell};
+    }
+
+    if( $window ) {
+	$window->insert('end', $entry);
+    } else {
+	return( $entry );
+    }
+}
+
+# ----------------------
+# proc: listbox_group_header( window )
+# desc: Put some info about the entries in the listbox
+sub listbox_group_header {
+    local($window) = @_;
+    my($entry);
+
+    if(! $window ) {
+	# Keep perl happy, *sigh*
+	$window = "";
+    }
+    
+    printf("Calling listbox_group_header($window)...\n") if( $DEBUG );
+
+    # Create the header...
+    $win_size = 0;
+
+    if( $window ) {
+	# Clear the content in the text widget...
+	$window->delete(0, 'end');
+    }
+
+    if( $DEBUG ) {
+	$entry = sprintf("   No  ") if( $DEBUG < 2 );
+    } else {
+	$entry = "";
+    }
+
+    if( $config{display_name} eq 'yes' || $config{display_name} eq 1 ) {
+	$entry    .= size_string( 'right', 'Name', $config{size_name});
+	$win_size += $config{size_name};
+    }
+
+    if( $config{display_gid} eq 'yes' || $config{display_gid} eq 1 ) {
+	$entry    .= size_string( 'left', 'GID', $config{size_id_number});
+	$win_size += $config{size_id_number};
+
+	$entry .= " ";
+    }
+
+    if( $config{display_passwd} eq 'yes' || $config{display_passwd} eq 1 ) {
+	if( $config{display_type_passwd} eq 'crypted' ) {
+	    $entry    .= size_string( 'right', 'Passwd', $config{size_passwd_crypted});
+	    $win_size += $config{size_passwd_crypted};
+	} else {
+	    $entry    .= size_string( 'right', 'Passwd', $config{size_passwd_desc});
+	    $win_size += $config{size_passwd_desc};
+	}
+    }
+
+    if( $config{display_members} eq 'yes' || $config{display_members} eq 1 ) {
+	$entry    .= size_string( 'right', 'Members', $config{size_members});
+	$win_size += $config{size_members};
+
+	$entry .= "  ";
+    }
+
+    if( $window ) {
+	$window->insert('end', $entry);
+    } else {
+	return( $entry );
+    }
+}
+
+# ----------------------
+# proc: listbox_prepare( ... )
+# desc: Prepare the listbox
+sub listbox_prepare {
+    local($number, $zero, $first, $second, $third, $fourth, $fifth, $sixth ) = @_;
+    my($entry);
+
+    # Add the user to the list...
+    $win_size = 0;
+
+    if( $DEBUG ) {
+	$entry = sprintf("%5d", $number) . ": " if( $DEBUG < 2 );
+    } else {
+	$entry = "";
+    }
+
+    if( $config{display_quota} eq 'yes' || $config{display_quota} eq 1 ) {
+	if(! $tcp_quota{$number} ) {
+	    # Zero the value, just in case...
+	    $tcp_quota{$number} = 0;
+	}
+	if(! $tcp_quota_allowed{$number} ) {
+	    $tcp_quota_allowed{$number} = "N";
+	}
+
+	$entry    .= size_string( 'left', $tcp_quota{$number}, $config{size_quota});
+
+	# Add a space after this...
+	$entry    .= " ";
+
+	# Add the Allowed/Disallowed marker...
+	$entry    .= "$tcp_quota_allowed{$number} | ";
+
+	$win_size += ($config{size_quota} + 1);
+    }
+
+    # Should we check if the user is in the NIS/YP database?
+    if( ($nis_support eq 'master') && (($config{show_exists_db} eq 'yes') || $config{show_exists_db} == 1) ) {
+	if( $passwd_line_nis{$zero} ) {
+	    $entry    .= size_string( 'left', 'Y', 3);
+	} else {
+	    $entry    .= size_string( 'left', 'N', 3);
+	}
+
+	$entry    .= " ";
+	$win_size += 4;
+    }
+
+    if( $config{display_name}   eq 'yes' || $config{display_name}   eq 1 ) {
+	$entry    .= size_string( 'right', $zero, $config{size_name});
+	$win_size += $config{size_name};
+    }
+
+    if( $config{display_passwd} eq 'yes' || $config{display_passwd} eq 1 ) {
+	$entry    .= size_string( 'right', $first, $SIZE_PASSWD);
+	$win_size += $SIZE_PASSWD;
+    }
+
+    if( $config{display_uid}    eq 'yes' || $config{display_uid}    eq 1 ) {
+	$entry    .= size_string( 'left', ".$second", $config{size_id_number});
+	$win_size += $config{size_id_number};
+
+	$entry .= "  ";
+    }
+
+    if( $config{display_group}  eq 'yes' || $config{display_group}  eq 1 ) {
+	if( $config{display_type_group} eq 'number' ) {
+	    $entry     .= size_string('left', ".$third", $config{size_id_number});
+	    $win_size  += $config{size_id_number};
+	} else {
+	    $group_name = get_group_name($third);
+	    $entry     .= size_string('right', $group_name, $config{size_id_name});
+	    $win_size   = $config{size_id_name};
+	}
+
+	$entry .= "  ";
+    }
+
+    if( $config{display_full}   eq 'yes' || $config{display_full}   eq 1 ) {
+	if( $fourth ) {
+	    $full_name = $fourth;
+	} else {
+	    $full_name = "-none-";
+	}
+
+	$entry    .= size_string( 'right', $full_name, $config{size_fullname});
+	$win_size += $config{size_fullname};
+    }
+
+    if( $config{display_home}   eq 'yes' || $config{display_home}   eq 1 ) {
+	$entry    .= size_string( 'right', $fifth, $config{size_homedir});
+	$win_size += $config{size_homedir};
+    }
+
+    if( $config{display_shell}  eq 'yes' || $config{display_shell}  eq 1 ) {
+	$entry    .= size_string( 'right', $sixth, $config{size_shell});
+	$win_size += $config{size_shell};
+    }
+
+    return( $entry );
+}
+
+# ----------------------
+# proc: listbox_user( window )
+# desc: Create the listview in the add/rem user window...
+sub listbox_user {
+    # window   - Window in which to insert
+    local($window) = @_;
+    my($i, $j, $k, $entry, $number, $mark, @pass, $PASS_CONT, $found_passwd, @shad);
+    my(@line) = ();
+
+    printf("Calling listbox_user($window)...\n") if( $DEBUG );
+
+    # Cycle through the passwd entries...
+    $i = 0;
+    do {
+	if( $passwd_line{$i} ) {
+	    printf("  %0.5d. $passwd_line{$i}\n", $i) if( $DEBUG );
+	    $SIZE_PASSWD = 0; $mark = "";
+
+	    @pass = split(':', $passwd_line{$i});
+
+	    if( $pass[0] ne '+' ) {
+		$PASS_CONT = 1;
+
+		if( $pass[1] =~ /^\*/ ) {
+		    # Account locked...
+
+		    if( $config{display_type_passwd} eq 'crypted' ) {
+			$SIZE_PASSWD = $config{size_passwd_crypted};
+			$mark = $pass[1];
+		    } else {
+			$SIZE_PASSWD = $config{size_passwd_desc};
+			$mark = "locked";
+		    }
+		} elsif( $pass[1] eq 'x' ) {
+		    # Shadow account okay...
+
+		    $j = 0; $found_passwd = 0;
+		    do {
+			if( $shadow_line{$j}) {
+			    @shad = split(':', $shadow_line{$j});
+
+			    if( $shad[0] ) {
+				$SHAD_CONT = 1;
+
+				if( $shad[0] eq $pass[0] ) {
+				    if( $config{display_type_passwd} eq 'descriptive' ) {
+					$SIZE_PASSWD = $config{size_passwd_desc};
+
+					if( $shad[1] ) {
+					    if( $shad[1] =~ /^\*/ ) {
+						# Not allowed to login...
+						$mark = "Slocked";
+					    } elsif( $shad[1] eq "" ) {
+						# No password...
+						$mark = "Sblank";
+					    } else {
+						# Have password...
+						$mark = "Sexists";
+					    }
+					} else {
+					    $mark = "Sblank";
+					}
+				    } else {
+					$SIZE_PASSWD = $config{size_passwd_crypted};
+					$mark = $shad[1];
+				    }
+
+				    # This is the crypted password, save it...
+				    $passwd_line{$i} = "$pass[0]:$shad[1]:$pass[2]:$pass[3]:$pass[4]:$pass[5]:$pass[6]:$pass[7]";
+
+				    $found_passwd = 1;
+				}
+
+				if(! $found_passwd ) {
+				    # We have not been able to find the passwd... Give a default: locked
+				    if( $config{allow_empty_passwords} eq "yes" ) {
+					$passwd_line{$i} = "$pass[0]::$pass[2]:$pass[3]:$pass[4]:$pass[5]:$pass[6]:$pass[7]";
+				    } else {
+					$passwd_line{$i} = "$pass[0]:*:$pass[2]:$pass[3]:$pass[4]:$pass[5]:$pass[6]:$pass[7]";
+				    }
+
+				    if( $config{display_type_passwd} eq 'crypted' ) {
+					$SIZE_PASSWD = $config{size_passwd_crypted};
+					$mark = "*";
+				    } else {
+					$SIZE_PASSWD = $config{size_passwd_desc};
+					$mark = "locked";
+				    }
+
+				    $found_passwd = 1;
+				}
+			    } else {
+				$SHAD_CONT = 0;
+			    }
+			} else {
+			    $SHAD_CONT = 0;
+			}
+
+			$j++;
+		    } while( $SHAD_CONT );
+		} elsif( $pass[1] eq "" ) {
+		    # No password...
+		    if( $config{display_type_passwd} eq 'crypted' ) {
+			$SIZE_PASSWD = $config{size_passwd_crypted};
+			$mark = "";
+		    } else {
+			$SIZE_PASSWD = $config{size_passwd_desc};
+			$mark = "blank";
+		    }
+		} else {
+		    # Have password...
+		    if( $config{display_type_passwd} eq 'crypted' ) {
+			$SIZE_PASSWD = $config{size_passwd_crypted};
+			$mark = $pass[1];
+		    } else {
+			$SIZE_PASSWD = $config{size_passwd_desc};
+			$mark = "exists";
+		    }
+		}
+
+#		for( $k = 0; $k < 6; $k++) {
+#		    if(! $pass[$k]) {
+#			if( $pass[$k] ne '0' ) {
+#			    $pass[$k] = "";
+#			}
+#		    }
+#		}
+
+		$entry = listbox_prepare($i, $pass[0], $mark, $pass[2], $pass[3], $pass[4], $pass[5], $pass[6]);
+		$listbox_line{$i} = $entry;
+		chop($listbox_line{$i});
+		
+		$window->insert('end', $entry);
+	    } else {
+		if( $pass[0] eq '+' ) {
+		    # We should continue anyway, the NIS entry might not be the last...
+		    $PASS_CONT = 1;
+		} else {
+		    $PASS_CONT = 0;
+		}
+	    }
+	} else {
+	    $PASS_CONT = 0;
+	}
+
+	$i++;
+    } while( $PASS_CONT );
+}
+
+# ----------------------
+# proc: listbox_group( window )
+# desc: Create the listview in the add/rem user window...
+sub listbox_group {
+    # window   - Window in which to insert
+    local($window) = @_;
+    my($i, $entry, @grp, $GRP_CONT, $j, $mark, $found_passwd, @shad, $SHAD_CONT);
+
+    printf("Calling listbox_group($window)...\n") if( $DEBUG );
+
+    $i = 0;
+    do {
+	if( $group_line{$i} ) {
+	    @grp = split(':', $group_line{$i});
+
+	    if( $grp[0] ) {
+		$GRP_CONT = 1;
+
+		if( $grp[1] =~ /^\*/ ) {
+		    # Group locked...
+
+		    if( $config{display_type_passwd} eq 'crypted' ) {
+			$SIZE_PASSWD = $config{size_passwd_crypted};
+			$mark = $grp[1];
+		    } else {
+			$SIZE_PASSWD = $config{size_passwd_desc};
+			$mark = "locked";
+		    }
+		} elsif( $grp[1] eq 'x' ) {
+		    # Shadow group okay...
+
+		    $j = 0; $found_passwd = 0;
+		    do {
+			if( $gshadow_line{$j}) {
+			    @shad = split(':', $gshadow_line{$j});
+
+			    if( $shad[0] ) {
+				$SHAD_CONT = 1;
+
+				if( $shad[0] eq $grp[0] ) {
+				    if( $config{display_type_passwd} eq 'descriptive' ) {
+					$SIZE_PASSWD = $config{size_passwd_desc};
+
+					if( $shad[1] ) {
+					    if( $shad[1] =~ /^\*/ ) {
+						# Not allowed to login...
+						$mark = "Slocked";
+					    } elsif( $shad[1] eq "" ) {
+						# No password...
+						$mark = "Sblank";
+					    } else {
+						# Have password...
+						$mark = "Sexists";
+					    }
+					} else {
+					    $mark = "Sblank";
+					}
+				    } else {
+					$SIZE_PASSWD = $config{size_passwd_crypted};
+					$mark = $shad[1];
+				    }
+
+				    # This is the crypted password, save it...
+				    $group_line{$i} = "$grp[0]\:";
+
+				    # Do we have any password?
+				    if( $shad[1] ) {
+					$group_line{$i} .= "$shad[1]\:";
+				    }
+
+				    if(! $grp[3] ) {
+					if( defined($grp[3]) ) {
+					    # It _IS_ defined, but if says it's not since it's zero (0)...
+					    # Sometimes perl can be very annoying...
+					    $group_line{$i} .= "$grp[2]\:";
+					} else {
+					    $group_line{$i} .= "\:";
+					}
+				    } else {
+					$group_line{$i} .= "\:";
+				    }
+
+				    # Extra members?
+				    if( $grp[3] ) {
+					$group_line{$i} .= "$grp[3]";
+				    }
+
+				    $found_passwd = 1;
+				}
+
+				if(! $found_passwd ) {
+				    # We have not been able to find the passwd... Give a default: locked
+				    if( $config{allow_empty_passwords} eq "yes" ) {
+					$group_line{$i} = "$grp[0]\:\:";
+				    } else {
+					$group_line{$i} = "$grp[0]\:*\:";
+				    }
+
+				    # Extra members?
+				    if( $grp[3] ) {
+					$group_line{$i} .= "$grp[3]";
+				    }
+
+				    if( $config{display_type_passwd} eq 'crypted' ) {
+					$SIZE_PASSWD = $config{size_passwd_crypted};
+					$mark = "*";
+				    } else {
+					$SIZE_PASSWD = $config{size_passwd_desc};
+					$mark = "locked";
+				    }
+
+				    $found_passwd = 1;
+				}
+			    } else {
+				$SHAD_CONT = 0;
+			    }
+			} else {
+			    $SHAD_CONT = 0;
+			}
+
+			$j++;
+		    } while( $SHAD_CONT );
+		} elsif( $grp[1] eq "" ) {
+		    # No password...
+		    $SIZE_PASSWD = $config{size_passwd_desc};
+		    $mark = "blank";
+		} else {
+		    # Have password...
+		    if( $config{display_type_passwd} eq 'crypted' ) {
+			$SIZE_PASSWD = $config{size_passwd_crypted};
+			$mark = $grp[1];
+		    } else {
+			$SIZE_PASSWD = $config{size_passwd_desc};
+			$mark = "exists";
+		    }
+		}
+
+		# Add the group to the list...
+		$entry    = "";
+		$win_size = 0;
+
+		if( $DEBUG ) {
+		    $entry = sprintf("%5d", $i) . ": " if( $DEBUG < 2 );
+		} else {
+		    $entry = " ";
+		}
+
+		$entry .= &size_string( 'right', $grp[0], $config{size_name});
+		$win_size += $config{size_name};
+
+		$entry .= &size_string( 'left',  $grp[2], $config{size_id_number});
+		$entry .= " ";
+		$win_size += ($config{size_id_number} + 1);
+
+		$entry .= &size_string( 'right', $mark, $SIZE_PASSWD);
+		$win_size += $SIZE_PASSWD;
+
+		$entry .= $grp[3] if( $grp[3] );
+
+		$window->insert('end', $entry);
+	    } else {
+		$GRP_CONT = 0;
+	    }
+	} else {
+	    $GRP_CONT = 0;
+	}
+
+	$i++;
+    } while( $GRP_CONT );
+}
+
+# ----------------------
+# proc: listbox_quota( window, filesys )
+# desc: Create the quota listview...
+sub listbox_quota {
+    # window   - Window in which to insert
+    # filesys  - What filesystem to show quota for
+    local($window, $filesys) = @_;
+    my($i, $temp, $entry);
+    my(@line) = ();
+    $i = 0;
+
+    printf("Calling listbox_quota($window, $filesys)...\n") if( $DEBUG );
+
+    # Open the command 'repquota <filesys>'
+    open(QUOTA, "$config{quota_prg} $filesys|") || printf("\n  ERROR: Could not open `$config{quota_prg} $filesys', $!\n");
+
+    # Ignore the two first lines...
+    $dummy = <QUOTA>;
+    $dummy = <QUOTA>;
+
+    # Read in the data...
+    while(! eof(QUOTA) ) {
+	$temp = <QUOTA>;
+	#  0         1       2       3       4      5       6     7     8      9
+	#              |            BLOCKS             |          FILES          |
+	# User            used    soft    hard  grace    used  soft  hard  grace
+	# root      --   53043       0       0           2460     0     0       
+	@line = split(' ', $temp);
+
+	# As one can see above, the file grace field does not nesesarily contain anything
+	if(! $line[9] ) {
+	    # Rearange variable 6 to 9
+	    $line[9] = $line[8];
+	    $line[8] = $line[7];
+	    $line[7] = $line[6];
+	    $line[6] = $line[5];
+	    $line[5] = "";
+	}
+
+	# Prepare the entry line...
+	if( $line[0] ) {    $entry  = size_string( 'right', $line[0], $config{size_name_quota});
+	} else {	    $entry  = size_string( 'right', ".", $config{size_name_quota}); }
+	if( $line[2] ) {    $entry .= size_string( 'left',  $line[2], $config{size_block_used});
+	} else {	    $entry .= size_string( 'left',  ".", $config{size_block_used}); }
+	if( $line[3] ) {    $entry .= size_string( 'left',  $line[3], $config{size_block_soft});
+	} else {	    $entry .= size_string( 'left',  ".", $config{size_block_soft}); }
+	if( $line[4] ) {    $entry .= size_string( 'left',  $line[4], $config{size_block_hard});
+	} else {	    $entry .= size_string( 'left',  ".", $config{size_block_hard}); }
+	if( $line[5] ) {    $entry .= size_string( 'left',  $line[5], $config{size_block_grace});
+	} else {	    $entry .= size_string( 'left',  ".", $config{size_block_grace}); }
+	if( $line[6] ) {    $entry .= size_string( 'left',  $line[6], $config{size_files_used});
+	} else {	    $entry .= size_string( 'left',  ".", $config{size_files_used}); }
+	if( $line[7] ) {    $entry .= size_string( 'left',  $line[7], $config{size_files_soft});
+	} else {	    $entry .= size_string( 'left',  ".", $config{size_files_soft}); }
+	if( $line[8] ) {    $entry .= size_string( 'left',  $line[8], $config{size_files_hard});
+	} else {	    $entry .= size_string( 'left',  ".", $config{size_files_hard}); }
+	if( $line[9] ) {    $entry .= size_string( 'left',  $line[9], $config{size_files_grace});
+	} else {	    $entry .= size_string( 'left',  ".", $config{size_files_grace}); }
+	$window->insert('end', $entry);
+
+	# Save the line...
+	if( $line[0] ) { $quota_line{$i}  = "$line[0]:"; } else { $quota_line{$i}  = "0:"; }
+	if( $line[2] ) { $quota_line{$i} .= "$line[2]:"; } else { $quota_line{$i} .= "0:"; }
+	if( $line[3] ) { $quota_line{$i} .= "$line[3]:"; } else { $quota_line{$i} .= "0:"; }
+	if( $line[4] ) { $quota_line{$i} .= "$line[4]:"; } else { $quota_line{$i} .= "0:"; }
+	if( $line[5] ) { $quota_line{$i} .= "$line[5]:"; } else { $quota_line{$i} .= "0:"; }
+	if( $line[6] ) { $quota_line{$i} .= "$line[6]:"; } else { $quota_line{$i} .= "0:"; }
+	if( $line[7] ) { $quota_line{$i} .= "$line[7]:"; } else { $quota_line{$i} .= "0:"; }
+	if( $line[8] ) { $quota_line{$i} .= "$line[8]:"; } else { $quota_line{$i} .= "0:"; }
+	if( $line[9] ) { $quota_line{$i} .= "$line[9]" ; } else { $quota_line{$i} .= "0" ; }
+
+	$i++;
+    }
+    close(QUOTA);
+}
+
+# ----------------------
+# proc: listbox_print( dest )
+# desc: Print the listbox to a destination
+sub listbox_print {
+    local($dest) = @_;
+    my($i, $line);
+    $i = 0;
+
+    printf("Calling listbox_print($dest)...\n") if( $DEBUG );
+
+    # Open the temp file...
+    if(! open(TEMP, ">$config{output_file}") ) {
+	printf("Could not open the file $config{output_file}, $!\n");
+	return( 1 );
+    }
+
+    # Print the header...
+    $line = listbox_user_header();
+    print TEMP "$line\n";
+
+    # Create the temp file...
+    while( $listbox_line{$i} ) {
+	print TEMP "$listbox_line{$i}\n";
+	$i++;
+    }
+
+    # Close the temp file...
+    close(TEMP);
+
+    # Should we print the file to a printer?
+    if( $dest ne 'file' ) {
+	# Print it...
+	system("$config{lpr_prg} -P$dest $config{output_file}");
+
+	# Delete the file...
+	unlink($config{output_file});
+    }
+}
+
+# ----------------------
+# proc: calculate_cost( seconds )
+# desc: Calculate the cost for that number of seconds
+sub calculate_cost {
+    local($sec) = @_;
+    if( !$sec ) {
+	$sec = 0;
+    }
+
+    # calculate number of minutes.
+    $b = int( ($sec / 600) );
+
+    # calculate the cost.
+    $c = $b * $cf{'LOW_RATE'};
+
+    return $c;
+}
+
+# ----------------------
+# proc: sort_list( level )
+# desc: Sort a variable list
+sub sort_list {
+    # level - Level of help (what do we want help on)
+    local($level) = @_;
+    my($key, $i, $j);
+    my(@temp1) = ();
+    my(%temp2) = ();
+
+    printf("Calling sort_list($level)...\n") if( $DEBUG );
+    printf("  Sorting by: `$config{sort_by}'\n") if( $DEBUG );
+
+    if( $level eq 'passwd' ) {
+	# Find the variable key...
+	for( $i = 0; $passwd_line{$i}; $i++ ) {
+	    @temp1 = split(':', $passwd_line{$i});
+
+	    # Just make sure every part atleast contain something...
+	    for( $j = 0; $j < 6; $j++ ) {
+		if(! $temp1[$j] ) {
+		    $temp1[$j] = "0";
+		} elsif( $temp1[$j] eq 'x' ) {
+		    $temp1[$j] = "exists";
+		}
+	    }
+
+	    # What key should we sort by?
+	    if(    $config{sort_by} eq 'login'  ) { $temp2{$temp1[0]} = $passwd_line{$i}; $num_sort = 0; }
+	    elsif( $config{sort_by} eq 'uid'    ) { $temp2{$temp1[2]} = $passwd_line{$i}; $num_sort = 1; }
+	    elsif( $config{sort_by} eq 'gid'    ) { $temp2{$temp1[3]} = $passwd_line{$i}; $num_sort = 1; }
+	    elsif( $config{sort_by} eq 'full'   ) { $temp2{$temp1[4]} = $passwd_line{$i}; $num_sort = 0; }
+	    elsif( $config{sort_by} eq 'home'   ) { $temp2{$temp1[5]} = $passwd_line{$i}; $num_sort = 0; }
+	    elsif( $config{sort_by} eq 'shell'  ) { $temp2{$temp1[6]} = $passwd_line{$i}; $num_sort = 0; }
+	    elsif( $config{sort_by} eq 'nosort' ) { $temp2{$temp1[7]} = $passwd_line{$i}; $num_sort = 1; }
+	}
+
+	# Sort on the key...
+	$a = 0; $b = 0; $i = 1; # We must leave room for the root entry at the top...
+
+	# When sorting, any dublicate is removed...
+	# Not good, espesally when sorting by GID!!
+
+	if(! $num_sort ) {
+	    # Character sort...
+	    foreach $key (sort(keys %temp2)) {
+		@temp1 = split(':', $temp2{$key});
+		
+		if( $temp2{$key} =~ /^root/ ) {
+		    # ALWAYS make sure that the root entry is first!!!
+		    $passwd_line{0}  = $temp2{$key};
+
+#		    printf("%3d. %10s : %s\n", 0, $key, $passwd_line{0}) if( $DEBUG );
+		} else {
+		    $passwd_line{$i} = $temp2{$key};
+
+#		    printf("%3d. %10s : %s\n", $i, $key, $passwd_line{$i}) if( $DEBUG );
+
+		    $i++;
+		}
+	    }
+	} else {
+	    # Numeric sort...
+	    foreach $key (sort { $a <=> $b } keys %temp2) {
+		@temp1 = split(':', $temp2{$key});
+		
+		if( $temp2{$key} =~ /^root/ ) {
+		    # ALWAYS make sure that the root entry is first!!!
+		    $passwd_line{0}  = $temp2{$key};
+
+#		    printf("%3d. %10s : %s\n", 0, $key, $passwd_line{0}) if( $DEBUG );
+		} else {
+		    $passwd_line{$i} = $temp2{$key};
+
+#		    printf("%3d. %10s : %s\n", $i, $key, $passwd_line{$i}) if( $DEBUG );
+
+		    $i++;
+		}
+	    }
+	}
+
+	# Zero the variables we do not longer need...
+#	while( $passwd_line{$i} ) {
+#	    $passwd_line{$i} = "";
+#	    $i++;
+#	}
+
+	# Erase the temporary array...
+	%temp2 = ();
+    } elsif( $level eq 'group' ) {
+	# Then what???
+    }
+}
+
+# ----------------------
+# proc: exchange_password( username, password )
+# desc: Change a password in a variable
+sub exchange_password {
+    local($name, $password) = @_;
+    my($i);
+
+    $i = 0;
+    while( $passwd_line{$i} ) {
+	@pass = split(':', $passwd_line{$i});
+
+	if( $name eq $pass[0] ) {
+	    $passwd_line{$i} = "$pass[0]\:$password\:$pass[2]\:$pass[3]\:$pass[4]\:$pass[5]\:$pass[6]\:$pass[7]";
+	}
+
+	$i++;
+    }
+}
+
+# ----------------------
+# proc: choose_group( mode )
+# desc: Opens a window with a listbox in it with groups
+sub choose_group {
+    local($choose_group_mode) = @_;
+    my($choose_group_top, $choose_group_bottom, $choose_group_listbox, $scroll, $i, $grp, @pl, $win_size);
+
+    printf("Calling choose_group($choose_group_mode)...\n") if( $DEBUG );
+
+    if(! Exists($choose_group_window)) {
+	# Create the window...
+	$choose_group_window = $main_window_users->Toplevel;
+    } else {
+	$choose_group_window->focus;
+	return;
+    }
+
+    # Configure the window...
+    $choose_group_window->title('Choose a group');
+    $choose_group_window->iconname('choose_group');
+
+    # Create some vertical frames...
+    $choose_group_top    = $choose_group_window->Frame;
+    $choose_group_bottom = $choose_group_window->Frame;
+    (@pl) = (-side   => 'top',
+	     -expand => 'yes',
+	     -padx   => 10,
+	     -pady   => 1,
+	     -fill   => 'both'
+    );
+    $choose_group_top->pack(@pl);
+    $choose_group_bottom->pack(@pl);
+
+    # Create the listbox...
+    $choose_group_listbox = $choose_group_top->Listbox(-setgrid => 1,
+						       -height  => 15,
+						       -width   => $win_size,
+						       -font    => 'fixed'
+    );
+    $scroll = $choose_group_top->Scrollbar(-command  => [$choose_group_listbox => 'yview']);
+    $choose_group_listbox->configure(-yscrollcommand => [$scroll => 'set']);
+    $scroll->pack(-side => 'right', -fill => 'y');
+    $choose_group_listbox->pack(-fill => 'both', -expand => 'yes');
+
+    # Save it so that it won't 'dissapere'...
+    $choose_mode = $choose_group_mode;
+    $choose_group_listbox->bind('<Double-Button-1>' => sub{
+	&get_list_entry( $choose_mode, $choose_group_listbox );
+    });
+
+    # Create the Main buttons...
+    &main_buttons($choose_group_bottom, 'choose_group');
+
+    # Fill the listbox with group names...
+    for( $i = 0; $i < $number_of_groups; $i++ ) {
+	if( $group_line{$i} ) {
+	    $grp = (split(':', $group_line{$i}))[0];
+	    $choose_group_listbox->insert('end', " $grp");
+	}
+    }
+}
+
+# ----------------------
+# proc: choose_user( mode )
+# desc: Opens a window with a listbox in it with users
+sub choose_user {
+    local($choose_user_mode) = @_;
+    my($choose_user_top, $choose_user_bottom, $choose_user_listbox, $scroll, $i, $usr, @pl);
+
+    printf("Calling choose_user($choose_user_mode)...\n") if( $DEBUG );
+
+    if(! Exists($choose_user_window)) {
+	# Create the window...
+	$choose_user_window = $main_window_groups->Toplevel;
+    } else {
+	$choose_user_window->focus;
+	return;
+    }
+
+    # Configure the window...
+    $choose_user_window->title('Choose a user');
+    $choose_user_window->iconname('choose_user');
+
+    # Create some vertical frames...
+    $choose_user_top    = $choose_user_window->Frame;
+    $choose_user_bottom = $choose_user_window->Frame;
+    (@pl) = (-side   => 'top',
+	     -expand => 'yes',
+	     -padx   => 10,
+	     -pady   => 1,
+	     -fill   => 'both'
+    );
+    $choose_user_top->pack(@pl);
+    $choose_user_bottom->pack(@pl);
+
+    # Create the listbox...
+    $choose_user_listbox = $choose_user_top->Listbox(-setgrid => 1,
+						     -height  => 15,
+						     -width   => $win_size,
+						     -font    => 'fixed'
+    );
+    $scroll = $choose_user_top->Scrollbar(-command  => [$choose_user_listbox => 'yview']);
+    $choose_user_listbox->configure(-yscrollcommand => [$scroll => 'set']);
+    $scroll->pack(-side => 'right', -fill => 'y');
+    $choose_user_listbox->pack(-fill => 'both', -expand => 'yes');
+
+    # Save it so that it won't 'dissapere'...
+    $choose_mode = $choose_user_mode;
+    $choose_user_listbox->bind('<Double-Button-1>' => sub{
+	&get_list_entry( $choose_mode, $choose_user_listbox );
+    });
+
+    # Create the Main buttons...
+    &main_buttons($choose_user_bottom, 'choose_user');
+
+    # Fill the listbox with group names...
+    for( $i = 0; $i < $number_of_users; $i++ ) {
+	if( $passwd_line{$i} ) {
+	    $usr = (split(':', $passwd_line{$i}))[0];
+	    $choose_user_listbox->insert('end', " $usr");
+	}
+    }
+}
+
+# ----------------------
+# proc: choose_id( mode )
+# desc: Opens a window with a listbox in it with groups
+sub choose_id {
+    local($action) = @_;
+    my(@ids) = ();
+
+    printf("Calling choose_id($action)...\n") if( $DEBUG );
+
+    if( $action eq 'UID' ) {
+	$min_id = $config{min_uid};
+	$max_id = $config{max_uid};
+
+	# Find first availible UID...
+	@ids = sort {$a <=> $b} @UIDS;
+
+	printf("  Selecting UID ") if( $DEBUG );
+    } else {
+	$min_id = $config{min_gid};
+	$max_id = $config{max_gid};
+
+	# Find first availible GID...
+	@ids = sort {$a <=> $b} @GIDS;
+
+	printf("  Selecting GID ") if( $DEBUG );
+    }
+    print "from $min_id to $max_id (" . join(",", @ids) . ").\n" if( $DEBUG );
+
+    while( $min_id <= $max_id ) {
+	if( $min_id <  $ids[0] || @ids==0) {
+	    return $min_id;
+	}
+
+	if( $min_id >  $ids[0] ) {
+	    shift @ids;
+	}
+
+	if( $min_id == $ids[0] ) {
+	    $min_id++;
+	}
+    }
+
+    if( $action eq 'UID' ) {
+	$config{min_uid} = $min_id;
+    } else {
+	$config{min_gid} = $min_id;
+    }
+
+    -1;                         # nothing available
+}
+
+# ----------------------
+# proc: lock_file( void )
+# desc: Lock the passwd/shadow files
+sub lock_passwd {
+    # Return 0 if we can not lock the file
+    # Return 1 when we have locked the file
+    return(1);
+
+    $lockfile_1 = "/etc/passwd.$$";
+    $lockfile_2 = "/etc/shadow.$$";
+
+    open(LOCK1, ">$lockfile_1");
+    print LOCK1 "$$";
+    close(LOCK1);
+
+    open(LOCK2, ">$lockfile_2");
+    print LOCK2 "$$";
+    close(LOCK2);
+}
+
+# ----------------------
+# proc: tick_override( void )
+# desc: Disable or enable the 'Override, allow empty password'
+sub tick_override {
+    local($passwd) = @_;
+
+    # Check if this user have a passwd or not...
+    if( $passwd ) {
+	$overide_empty->configure(-state => 'disabled');
+    } else {
+	if( $config{allow_empty_passwords} eq 'yes' || $config{allow_empty_passwords} eq 1) {
+	    $overide_empty->configure(-state => 'disabled');
+	} else {
+	    $overide_empty->configure(-state => 'normal');
+	}
+    }
+}
+
+# ----------------------
+# proc: wait_box( text )
+# desc: Change the wait box text...
+sub wait_box {
+    local($text) = @_;
+
+    $wait_box->configure(-txt2 => $text);
+    $wait_box->update;
+}
+
+sub load_files {
+    printf("\nLoading files...\n=====================\n") if($DEBUG);
+
+    # Should we load the NIS/YP database?
+    if( $nis_support eq 'master' ) {
+	&wait_box('Loading NIS/YP database, please wait...');
+	&read_nis();
+    }
+
+    # Should we only use NIS/YP, or should we care about the /etc/passwd file?
+    if( ($config{use_only_nis} eq 'no') || ($config{use_only_nis} eq '0') ) {
+	# Read in the user file...
+	&wait_box('Loading user database, please wait...');
+	&read_passwd_file();
+
+	# Read in the group file...
+	&wait_box('Loading group database, please wait...');
+	&read_group_file();
+    }
+
+    # Should we read in the shadow file?
+    if(	$config{shadow} eq 'yes' || $config{shadow} eq 1) {
+	&wait_box('Loading shadow passwd database, please wait...');
+
+	&read_shadow_file();   # Password shadow
+	&read_gshadow_file();  # Group shadow
+    }
+
+    # Should we load the TCPQuota database?
+    if( $check_tcpquota && ($config{display_quota} eq 'yes' || $config{display_quota} eq 1) ) {
+	&wait_box('Loading TCPQuota database, please wait...');
+	&read_tcp_quota();
+    }
+
+    # Read in the shell file...
+    &wait_box('Loading shell database, please wait...');
+    &read_shell_file();
+
+    # Check what printer we have...
+    &wait_box('Loading printer database, please wait...');
+    &read_printcap();
+
+    printf("=====================\nDone loading files...\n\n") if($DEBUG);
+
+    $files_loaded = 1;
+}
+
+# ----------------------
+# proc: clear_variables( void )
+# desc: Clear some variables...
+sub clear_variables {
+    undef $eduser_top;                undef $emptypasswd_sub;
+    undef $eduser_bottom;             undef $sub_menu1;
+    undef $eduser_left;               undef $sub_menu2;
+    undef $eduser_middle;             undef $sub_menu3;
+    undef $eduser_menu_frame;         undef $menu_button;
+    undef $eduser_quota;
+    undef $eduser_group_input;
+    undef $eduser_inputs;
+    undef $homestype_sub;
+    undef $group_button;
+
+    undef %eduser_f;
+    undef %eduser_l;
+    undef %eduser_e;
+    undef %shadow_value;
+    undef %quota_value;
+    undef %menu_button;
+    undef %shell_name;
+
+    undef $add_to_group;
+    undef $overide_empty;
+
+    undef $chpass_username;
+    undef $chpass_action_1;
+
+    undef $expand_shadow;
+    undef $secondary_groups_listbox;
+}
+
+# ----------------------
+# proc: help( level )
+# desc: Print some help using the program...
+sub help {
+    # level - Level of help (what do we want help on)
+    #         0 = main
+    #         1 = add user
+    #         2 = rem user
+    #         3 = check primary group
+    #         4 = change password
+    local($level) = @_;
+
+    printf("Calling help($level)...\n") if( $DEBUG );
+}}

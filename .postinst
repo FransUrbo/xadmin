@@ -1,0 +1,5 @@
+#!/bin/sh
+
+# The files in '/usr/lib/xadmin/bin/' should
+#   be executable...
+chmod a+x /usr/lib/xadmin/bin/*

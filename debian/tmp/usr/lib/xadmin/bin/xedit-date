@@ -1,0 +1,715 @@
+#!/usr/bin/perl -w
+
+# ----------------------
+# $Log: xedit-date,v $
+# Revision 1.9  1998/03/04 15:58:07  turbo
+# * Localized some variables
+# * Make sure we update the correct variables when encreasing/decreasing any
+#   value (using global variables)...
+# * Make sure we update the correct month, even if we are using american date
+#   format...
+#
+# Revision 1.8  1998/02/21 18:15:13  turbo
+# * Make sure we could open and read the timezone file, otherwise
+#   output a '<none>' default...
+# * Added the possibility to SAVE the timezone/localtime configured...
+#   New funcions:
+#     set_zone        - Save the '/etc/timezone' file and create the
+#                       '/etc/localtime' link...
+#
+# Revision 1.7  1998/02/19 22:00:44  turbo
+# * Added the possibility to change the Timezone... It does not save the result
+#   yet though...
+#   New functions:
+#     get_timezone    - Open the file '/etc/timezone' to find the timezone
+#     update_timezone - Just exchange the new value in the window
+#     timezone_menu   - Create a menu with all the timezones to choose from
+#     timezone_load   - Load the list of the timezones (/usr/lib/zoneinfo)
+# * Fixed the up/down month to work (if Oct., and down => Sept.)
+#   New functions:
+#     translate_month - Translate the month name to month number
+#
+# Revision 1.6  1998/02/19 17:06:19  turbo
+# Found and fixed the core dump problem... You can obviasly not do 'return func()'
+# in the new version of perl...
+#
+# Revision 1.5  1997/10/10 04:21:37  turbo
+# Now it is safe to execute the binary '/bin/date'... I hope... :)
+# Only output the date/time we are about to set if DEBUG'in...
+#
+# Revision 1.4  1997/10/07 15:27:01  turbo
+# * Make sure we initialize some variables before starting, perl does not like
+#   uninitialized variables...
+# * Moved the calling of 'get_timestring()' and configuration of the time/date
+#   labels to the new function, 'reset_time()' which outputs the time and date.
+# * Added a lot of checking of the time/date, so that the values is in acceptable
+#   ranges... (You can not have second 62 for example... :)
+# * Fixed the setting of the date, calles '/bin/date' properly and in one go
+#   now, no need to call it once for the date, and once for the time...
+# * Fixed the function which updates the seconds in the window, it is called
+#   by an SIGALRM once a second, but only if the 'seconds lable' is not choosen...
+#
+# Revision 1.3  1997/09/25 17:05:39  turbo
+# * Set up a signalhandler to be able to update the second-view each second...
+# * Added the possibility for the 'get_timestring()' to only return the second.
+# * Added the 'change_value()' to be able to change any of the date/time values.
+#
+# Revision 1.2  1997/09/24 19:17:27  turbo
+# Got the GUI in order, but have not finnished any of the support functions...
+#
+# Revision 1.1  1997/09/24 16:58:00  turbo
+# Initial release of 'xAdmin-Date/Time', a administration tool for X11.
+# Needs perl and perl-tk. Made by Turbo Fredriksson <turbo@tripnet.se>
+#
+
+use Tk;
+use Tk::Dialog;
+use Tk::ErrorDialog;
+use Tk::FileSelect;
+use POSIX;
+
+# DEBUG = 0    =>   Ingen debugging, real actions
+# DEBUG = 1    =>   Virtual file system, debug output
+# DEBUG = 2    =>   Real actions, debug output
+$DEBUG  = 0;
+
+# Check if we have the variable XADMIN_DEBUG...
+if($ENV{'XADMIN_DEBUG'}) {
+    $DEBUG = $ENV{'XADMIN_DEBUG'}
+}
+
+# These is just to make perl stop complaining,
+# about 'Name xx used only once'.
+# They are used, but in the library...
+$CONFIG_DIR  = "";
+$CONFIG_FILE = "";
+$HOME        = "";
+
+$CONFIG_DIR                      = '/etc/xadmin';
+$CONFIG_FILE                     = 'xedit-date';
+
+# Some misc defaults...
+$defaults{win_font}              = "-*-Helvetica-Medium-R-Normal--*-140-*-*-*-*-*-*";
+$defaults{large_font}            = "-sony-fixed-medium-r-normal--24-170-100-100-c-120-iso8859-1";
+$defaults{use_24}                = 'yes';
+$defaults{use_american}          = 'no';
+$defaults{timezone_dirs}         = '/usr/lib/zoneinfo';
+
+$selected_color                  = 'Red';
+$unselected_color                = 'Black';
+
+# Some path defaults...
+if( $DEBUG == 1 ) {
+    # Debug defaults...
+    $defaults{lib_dir}           = "./lib";
+    $defaults{domainname}        = "./etc/defaultdomain";
+    $defaults{timezone_file}     = './etc/timezone';
+    $defaults{localtime_link}    = './etc/localtime';
+} else {
+    # Live defaults...
+    $defaults{lib_dir}           = "/usr/lib/xadmin";
+    $defaults{domainname}        = "/etc/defaultdomain";
+    $defaults{timezone_file}     = '/etc/timezone';
+    $defaults{localtime_link}    = '/etc/localtime';
+}
+
+$HOME = $ENV{'HOME'};
+$conf_checked = 0;
+
+# No servicable parts below...
+# ----------------------------
+
+# Are we running in a X enviroment?
+# (Check if we have a DISPLAY variable)
+if($ENV{'DISPLAY'}) {
+    # Load the utilities library...
+    require "$defaults{lib_dir}/xadmin.pl";
+#   $drop_down_icon = "$defaults{lib_dir}/dropdown.xbm";
+
+    # Check the config file...
+    if(! $conf_checked ) {
+	$conf_checked = 1;
+
+	%config = get_config(%defaults);
+    }
+
+    main_date();
+    MainLoop;
+    exit 0;
+} else {
+    printf("Not running in a X enviroment...\n");
+    exit 1;
+}
+
+# ----------------------
+# proc main_date( void )
+# This is the main routine...
+sub main_date {
+    printf("Calling main_date(void)...\n") if( $DEBUG );
+
+    if( Exists($main_date_window) ) {
+	return(0);
+    }
+
+    # Create the main window...
+    $main_date_window = MainWindow->new();
+
+    # Configure the Main window...
+    $main_date_window->title('XEdit-Date/Time');
+    $main_date_window->iconname('xedit-date_time');
+    $main_date_window->ConfigSpecs(-resizeable => ['ACTIVE',undef,undef,1]);
+
+    # ----------------------
+
+    (@pl1) = (-side   => 'top',
+	      -padx   => 10,
+	      -pady   => 1,
+	      -anchor => 'w',
+	      -fill   => 'both'
+    );
+
+    (@pl2) = (-side   => 'left',
+	      -expand => 'no'
+    );
+
+    # Create some vertical frames...
+#   $main_top     = $main_date_window->Frame->pack(@pl1);
+    $main_middle1 = $main_date_window->Frame(-relief => 'groove', -borderwidth => 2)->pack(@pl1);
+    $main_middle2 = $main_date_window->Frame(-relief => 'groove', -borderwidth => 2)->pack(@pl1);
+    $main_middle3 = $main_date_window->Frame(-relief => 'groove', -borderwidth => 2)->pack(@pl1);
+    $main_middle4 = $main_date_window->Frame(-relief => 'groove', -borderwidth => 2)->pack(@pl1);
+    $main_bottom  = $main_date_window->Frame(-relief => 'groove', -bd => 2)->pack(@pl1);
+
+    # ----------------------
+
+    # Create the Main buttons...
+    main_buttons( $main_bottom, 'date' );
+
+    (@sl) = (-borderwidth => 0, -padx => 0, -font => $config{large_font}, -foreground => $unselected_color);
+    
+    # Create the time buttons...
+    $main_middle1->Label(-text => "Time:     ", @sl)->pack(@pl2);
+    for( $i = 0; $i < 4; $i++ ) {
+	$time{$i} = $main_middle1->Label(@sl)->pack(@pl2);
+	if( ($i < 2) && ($i >= 0) ) {
+	    $main_middle1->Label(-text => ':')->pack(@pl2);
+	}
+
+	# Set up bindings on items of interest
+	$time{$i}->bind('<1>' => [\&select_item, $time{$i}]);
+    }
+
+    # Create the date buttons...
+    $main_middle2->Label(-text => "Date:     ", @sl)->pack(@pl2);
+    for( $i = 0; $i < 3; $i++ ) {
+	$date{$i} = $main_middle2->Label(@sl)->pack(@pl2);
+	$main_middle2->Label(-text => ' ')->pack(@pl2);
+
+	# Set up bindings on items of interest
+	$date{$i}->bind('<1>' => [\&select_item, $date{$i}]);
+    }
+
+    # Create the timezone buttons...
+    $main_middle3->Label(-text => "Timezone: ", @sl)->pack(@pl2);
+    $zone = $main_middle3->Label(@sl)->pack(@pl2);
+
+    # Get and output the date and time...
+    reset_time();
+
+    # Get and output the timezone...
+    get_timezone();
+
+    # Get the timezones availible...
+    timezone_load();
+
+    # Create the timezone menu...
+    timezone_menu();
+
+    # ----------------------
+
+    # Create the control buttons...
+    $main_middle4->Message(-text => "Click on the part of the value you wish to change and use the arrows to adjust it.")->pack(@pl2);
+    $scroll = $main_middle4->Scrollbar(-repeatinterval => 50, -width => 30, -command => [\&change_value])->pack(@pl2);
+
+    $main_middle4->Checkbutton(-text => '24 hour time',  -variable => \$config{use_24},       -command => [\&reset_time])->pack(@pl2, -side => 'top', -anchor => 'w');
+    $main_middle4->Checkbutton(-text => 'American date', -variable => \$config{use_american}, -command => [\&reset_time])->pack(@pl2, -side => 'top', -anchor => 'w');
+    $main_middle4->Button(-text => 'Reset time', -command => [\&reset_time])->pack(@pl2, -side => 'top', -anchor => 'n');
+
+    # What function should we call when getting a SIGALARM?
+    $SIG{'ALRM'} = 'update_time';
+
+    # Make sure we get a SIGALARM every second...
+    alarm( 1 );
+}
+
+# ----------------------
+# proc reset_time( void )
+# Get the system date/time
+sub reset_time {
+    my(@time, @date, $value);
+
+    printf("Calling reset_time(void)...\n") if( $DEBUG );
+
+    # Get the time...
+    @time = split(':', get_timestring('time'));
+    $hour = $time[0]; $minute = $time[1]; $second = $time[2];
+
+    # Configure the labels...
+    $time{0}->configure(-text => "$hour");               # Hour
+    $time{1}->configure(-text => "$minute");             # Minute
+    $time{2}->configure(-text => "$second");             # Second
+    if(! $config{use_24} ) {
+	$time{3}->configure(-text => " $time[3]");       # AM/PM
+    } else {
+	$time{3}->configure(-text => "");
+    }
+
+    # Get the date...
+    @date = split(':', get_timestring('date'));
+
+    # Configure the labels...
+    if( $config{use_american} ) {
+	$month = $date[0]; $day = $date[1]; $year = $date[2];
+
+	# Translate the month name to the month number...
+	$value = translate_month($month, 'letter');
+
+	$date{0}->configure(-text => "$value");              # Month
+	$date{1}->configure(-text => "$day");                # Day
+	$date{2}->configure(-text => "$year");               # Year
+
+	printf("  date: $value, $day, $year\n") if( $DEBUG );
+    } else {
+	$day = $date[0]; $month = $date[1]; $year = $date[2];
+
+	# Translate the month name to the month number...
+	$value = translate_month($month, 'letter');
+
+	$date{0}->configure(-text => "$day");                # Month
+	$date{1}->configure(-text => "$value");              # Day
+	$date{2}->configure(-text => "$year");               # Year
+
+	printf("  date: $day, $value, $year\n") if( $DEBUG );
+    }
+}
+
+# ----------------------
+# proc get_timestring( type )
+# Get the system date/time
+sub get_timestring {
+    local( $type ) = @_;
+    my($sec,$min,$mday,$mon,$yr,$wday,$yday,$isdst);
+
+    ($sec,$min,$hour,$mday,$mon,$yr,$wday,$yday,$isdst) = localtime;
+
+    printf("") if( $DEBUG );
+
+    if( $type eq 'date' ) {
+	if( $config{use_american} ) {
+	    # Return the date in the form: 'Jan:31:1997'
+	    # Shell command: 'date +"%b:%d:%Y"'
+	    $ret = strftime( "%b:%d:%Y", $sec, $min, $hour, $mday,
+			    $mon, $yr, $wday, $yday, $isdst);
+	} else {
+	    # Return the date in the form: '31:Jan:1997'
+	    # Shell command: 'date +"%d:%b:%Y"'
+	    $ret = strftime( "%d:%b:%Y", $sec, $min, $hour, $mday,
+			    $mon, $yr, $wday, $yday, $isdst);
+	}
+    } elsif( $type eq 'time' ) {
+	if( $config{use_24} ) {
+	    # Return the time in the form: '19:29:56'
+	    # Shell command: 'date +"%H:%M:%S"'
+	    $ret = strftime( "%H:%M:%S", $sec, $min, $hour, $mday,
+			    $mon, $yr, $wday, $yday, $isdst);
+	} else {
+	    # Return the time in the form: 7:29:56 PM
+	    # Shell command: 'date +"%l:%M:%S:%p"'
+	    $ret = strftime( "%l:%M:%S:%p", $sec, $min, $hour, $mday,
+			    $mon, $yr, $wday, $yday, $isdst);
+	}
+    } elsif( $type eq 'update' ) {
+	# Return the second
+	# Shell command: 'date +"%S"'
+	$ret = strftime( "%S", $sec, $min, $hour, $mday,
+			$mon, $yr, $wday, $yday, $isdst);
+    }
+
+    return( $ret );
+}
+
+# ----------------------
+# proc get_timezone( void )
+# Get the system timezone
+sub get_timezone {
+    printf("Calling get_timezone(void)...\n") if( $DEBUG );
+
+    if( open(TIMEZONE, $config{timezone_file}) ) {
+	$real_timezone = <TIMEZONE>;
+
+	if( $real_timezone ) {
+	    $timezone = (split('/', $real_timezone))[1];
+	    chop($timezone);
+	}
+
+	close(TIMEZONE);
+    } else {
+	$real_timezone = "";
+	$timezone = "";
+    }
+}
+
+# ----------------------
+# proc change_value( void )
+# Change any of the values choosen
+sub change_value {
+    my($value, $type, $e);
+
+    $e = $scroll->XEvent;
+
+    if( $selected_item ) {
+	if( $selected_item eq $zone ) {
+	    return;
+	}
+
+	# Find out if we should enc or dec the value...
+	$type  = $scroll->identify($e->x,$e->y);
+
+	# Get the value in the label...
+	$value = $selected_item->cget('text');
+
+	if( $type eq 'arrow1' ) {
+	    # Selecting the UP arrow...
+
+	    if( $selected_item eq $date{1} ) {
+		$month++;
+	    } else {
+		$value++;
+	    }
+
+	    if(      $selected_item eq $time{0} ) {
+		# Hour
+		$hour++;
+
+		if( $config{use_24} ) {
+		    if( $value >= 24 ) {
+			$value = sprintf("%0.d", 0);
+			$hour  = $value;
+		    }
+		} else {
+		    if( $value > 12 ) {
+			$value = 1;
+			$hour  = 1;
+			$time{3}->configure(-text => " AM");
+		    }
+		}
+	    } elsif( $selected_item eq $time{1} ) {
+		# Minute
+		$minute++;
+
+		if( $value >= 60 ) {
+		    $value  = sprintf("%0.2d", 0);
+		    $minute = $value;
+		}
+	    } elsif( $selected_item eq $time{2} ) {
+		# Second
+		$second++;
+
+		if( $value >= 60 ) {
+		    $value  = sprintf("%0.2d", 0);
+		    $second = $value;
+		}
+	    } elsif( $selected_item eq $date{0} ) {
+		# Day
+		$day++;
+
+		if( $value >= 32 ) {
+		    $value = 1;
+		    $day   = $value;
+		}
+	    } elsif( $selected_item eq $date{1} ) {
+		# Month
+		$month++;
+
+		if( $month >= 13 ) {
+		    $month = 1;
+		}
+	    }
+	} elsif( $type eq 'arrow2' ) {
+	    # Selecting the DOWN arrow...
+
+	    if( $selected_item eq $date{1} ) {
+		$month--;
+	    } else {
+		$value--;
+	    }
+
+	    if(      $selected_item eq $time{0} ) {
+		# Hour
+		$hour--;
+
+		if( $config{use_24} ) {
+		    if( $value < 0 ) {
+			$value = sprintf("%0.2d", 23);
+			$hour  = $value;
+		    }
+		} else {
+		    if( $value < 1 ) {
+			$value = 12;
+			$hour  = $value;
+
+			$time{3}->configure(-text => " PM");
+		    }
+		}
+	    } elsif( $selected_item eq $time{1} ) {
+		# Minute
+		$minute--;
+
+		if( $value < 0 ) {
+		    $value  = 59;
+		    $minute = $value;
+		}
+
+		$value = sprintf("%0.2d", $value);
+		$minute = $value;
+	    } elsif( $selected_item eq $time{2} ) {
+		# Second
+		$second--;
+
+		if( $value < 0 ) {
+		    $value  = 59;
+		    $second = $value;
+		}
+
+		$value = sprintf("%0.2d", $value);
+		$second = $value;
+	    } elsif( $selected_item eq $date{0} ) {
+		# Day
+		$day--;
+
+		if( $value < 1 ) {
+		    $value = 31;
+		    $day   = $value;
+		}
+	    } elsif( $selected_item eq $date{1} ) {
+		# Month
+		$month--;
+
+		if( $month < 1 ) {
+		    $month = 12;
+		}
+	    }
+	}
+
+	if( $selected_item eq $date{1} ) {
+	    $value = translate_month($month, 'letter');
+	}
+
+	# Update the label...
+	$selected_item->configure(-text => $value);
+    }
+}
+
+# ----------------------
+# proc set_date( void )
+# Set the system date/time
+sub set_date {
+    my($mon);
+
+    # Set the system time
+    printf("Calling set_date(void)...\n") if( $DEBUG );
+
+    $date_time = sprintf(  "/bin/date %02d%02d%02d%02d%04d.%02d", $day, $month, $hour, $minute, $year, $second);
+    printf("  Setting date: '$date_time'\n") if( $DEBUG );
+
+    exec($date_time) if(! $DEBUG );
+}
+
+# ----------------------
+# proc set_timezone( void )
+# Set the system timezone
+sub set_zone {
+    printf("Calling set_timezone(void)...\n") if( $DEBUG );
+
+    if( $real_timezone ) {
+	printf("  Timezone: $real_timezone\n") if( $DEBUG );
+
+	# Save the timezone file...
+	open(TIMEZONE, ">$config{timezone_file}");
+	print TIMEZONE $real_timezone;
+	close(TIMEZONE);
+
+	# Create the localtime link...
+	system("ln -sf $config{timezone_dirs}/$real_timezone $config{localtime_link}");
+    } else {
+	printf("  Timezone: <none>\n") if( $DEBUG );
+    }
+}
+
+# ----------------------
+# proc update_time( void )
+# Update the seconds
+sub update_time {
+    $second = $time{2}->cget('text');
+
+    if( $second > 58 ) {
+	$second = sprintf("%0.2d", 0);
+    } else {
+	$second++;
+	$second = sprintf("%0.2d", $second);
+    }
+
+    # Update the label...
+    $time{2}->configure(-text => $second);
+
+    # Make sure we update the signal at the right time...
+    if( $selected_item ) {
+	if( $selected_item ne $time{2} ) {
+	    alarm( 1 );
+	}
+    } else {
+	alarm( 1 );
+    }
+}
+
+# ----------------------
+# proc update_timezone( zone )
+# Update the timezone in the window
+sub update_timezone {
+    local($time_zone) = @_;
+
+    $real_timezone = $time_zone;
+    $time_zone = (split('/', $real_timezone))[1];
+
+    $menu1->configure(-text => $time_zone);
+}
+
+# ----------------------
+# proc select_item( label )
+# Change color on the selected item, and remember which one
+sub select_item {
+    local($selected) = @_;
+    my($i);
+
+    for( $i = 0; $i < 3; $i++ ) {
+	$time{$i}->configure(-foreground => $unselected_color);
+	$date{$i}->configure(-foreground => $unselected_color);
+    }
+
+    if( $selected ) {
+        $selected->configure(-foreground => $selected_color);
+
+	$selected_item = $selected;
+
+	if( $selected_item ne $time{2} ) {
+	    # Make sure we update the signal...
+	    alarm( 1 );
+	}
+    }
+}
+
+# ----------------------
+# proc timezone_menu( void )
+# Choose from a number of timezones
+sub timezone_menu {
+    my($main, $number, @temp, %menu);
+
+    printf("Calling timezone_menu(void)...\n") if( $DEBUG );
+
+    if( $timezone ) {
+	$menu1 = $main_middle3->Menubutton(-text => $timezone, -font => $config{large_font});
+    } else {
+	$menu1 = $main_middle3->Menubutton(-text => "<none>", -font => $config{large_font});
+    }
+
+    $number = 0;
+    foreach $main_dir (@ZONES) {
+	$menu1->cascade(-label => $main_dir);
+
+	$menu{$number} = $menu1->cget(-menu)->Menu(-tearoff => 0);
+	$menu1->entryconfigure($main_dir, -menu => $menu{$number});
+
+	@temp = split(' ', $ZONE{$main_dir});
+	printf("  ZONE: $main_dir\n") if( $DEBUG );
+	foreach $sub_dir (@temp) {
+	    $menu{$number}->command(-label => $sub_dir, -command => [\&update_timezone, "$main_dir/$sub_dir"]);
+	}
+
+	$number++;
+    }
+
+    $menu1->pack(-side => 'left');
+}
+
+# ----------------------
+# proc timezone_load( void )
+# Load the timezones from disk
+sub timezone_load {
+    my($temp);
+
+    # Load all the zone dirs...
+    open(ZONES, "cd $config{timezone_dirs}; /usr/bin/find -type d -maxdepth 1 -name '[A-Z]*' |");
+    while(! eof(ZONES) ) {
+	$temp = <ZONES>;
+	$temp =~ s@./@@g;
+	chop($temp);
+
+	push(@ZONES, $temp);
+	printf("  ZONE: $temp\n") if( $DEBUG );
+    }
+    close(ZONES);
+
+    # Load all the separate local zones...
+    %ZONE = ();
+    foreach $dir (@ZONES) {
+	open(ZONE, "cd $config{timezone_dirs}/$dir; /usr/bin/find -type f |");
+	while(! eof(ZONE) ) {
+	    $temp = <ZONE>;
+	    $temp =~ s@./@@g;
+	    chop($temp);
+
+	    $ZONE{$dir} .= "$temp ";
+#	    printf("    $dir: $temp\n") if( $DEBUG );
+	}
+	close(ZONE);
+    }
+}
+
+# ----------------------
+# proc translate_month( month, command )
+# Translate month name to month number
+sub translate_month {
+    local($type, $cmd) = @_;
+
+    printf("Calling translate_month($type, $cmd)...\n") if( $DEBUG );
+
+    if( $cmd eq 'letter' ) {
+	if(      ($type eq  '1') || ($type eq 'Jan') ) { $month =  1; return('Jan');
+	} elsif( ($type eq  '2') || ($type eq 'Feb') ) { $month =  2; return('Feb');
+	} elsif( ($type eq  '3') || ($type eq 'Mar') ) { $month =  3; return('Mar');
+	} elsif( ($type eq  '4') || ($type eq 'Apr') ) { $month =  4; return('Apr');
+	} elsif( ($type eq  '5') || ($type eq 'Maj') ) { $month =  5; return('Maj');
+	} elsif( ($type eq  '6') || ($type eq 'Jun') ) { $month =  6; return('Jun');
+	} elsif( ($type eq  '7') || ($type eq 'Jul') ) { $month =  7; return('Jul');
+	} elsif( ($type eq  '8') || ($type eq 'Aug') ) { $month =  8; return('Aug');
+	} elsif( ($type eq  '9') || ($type eq 'Sep') ) { $month =  9; return('Sep');
+	} elsif( ($type eq '10') || ($type eq 'Oct') ) { $month = 10; return('Oct');
+	} elsif( ($type eq '11') || ($type eq 'Nov') ) { $month = 11; return('Nov');
+	} elsif( ($type eq '12') || ($type eq 'Dec') ) { $month = 12; return('Dec');
+	}
+    } else {
+	if(      $type eq 'Jan' ) { $month =  1; return('1');
+	} elsif( $type eq 'Feb' ) { $month =  2; return('2');
+	} elsif( $type eq 'Mar' ) { $month =  3; return('3');
+	} elsif( $type eq 'Apr' ) { $month =  4; return('4');
+	} elsif( $type eq 'Maj' ) { $month =  5; return('5');
+	} elsif( $type eq 'Jun' ) { $month =  6; return('6');
+	} elsif( $type eq 'Jul' ) { $month =  7; return('7');
+	} elsif( $type eq 'Aug' ) { $month =  8; return('8');
+	} elsif( $type eq 'Sep' ) { $month =  9; return('9');
+	} elsif( $type eq 'Oct' ) { $month = 10; return('10');
+	} elsif( $type eq 'Nov' ) { $month = 11; return('11');
+	} elsif( $type eq 'Dec' ) { $month = 12; return('12');
+	}
+    }
+}

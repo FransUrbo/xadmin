@@ -1,0 +1,834 @@
+# ----------------------
+# proc additional_info(void)
+# Remember some more info about the user...
+sub additional_info {
+    printf("Calling additional_info(void)...\n") if( $DEBUG );
+
+    my($ok, $cancel) = ('Ok', 'Oopps');
+    my($dialog, $button, $found_group);
+
+    # Default, we should not put a error dialog...
+    $error_dialog = 0;
+
+    # Create the error dialog, just in case...
+    $dialog = $window->Dialog(-bitmap         => 'error',
+			      -default_button => $cancel,
+			      -buttons        => [$cancel]
+    );
+
+    # Do some error checks...
+    if( $user_name eq "" ) {
+	# No username specified...
+	$dialog->configure(-text => 'You did not specify a login name...');
+
+	$error_dialog = 1;
+    } elsif( length($user_name) > 8 ) {
+	$dialog->configure(-text => 'The user name must be less than 9 characters...');
+
+	$error_dialog = 1;
+    } elsif( $user_name !~ /^[A-Za-z_][-_A-Za-z0-9]*$/ ) {
+	# The username consists of bogus character/-s..
+	$dialog->configure(-text => 'To avoid problems, please enter a username consisting of international lowercase letters and/or numbers...');
+
+	$error_dialog = 1;
+    } elsif( $user_name !~ /^[a-z][a-z0-9]+$/ && $bad_names_support ne 'b1' ) {
+	# The username starts with a bogus character...
+	$dialog->configure(-text => 'Please enter a username consisting of a lowercase letter followed by one or more lowercase letters or numbers. If you wish to use a name with underscores, dashes, or uppercase characters, please tick the \'Allow bad names\'...');
+
+	$error_dialog = 1;
+    } else {
+	# Everything looks okay...
+
+	# Fork a $EDITOR process, where the sysadm can write what he feels like...
+	$info_file = "$config{user_info_dir}/$user_name";
+	if($ENV{'EDITOR'}) {
+	    system($ENV{'EDITOR'}, $info_file);
+	} else {
+	    $dialog->configure(-text => 'You do not have a EDITOR variable, can not edit the file...');
+	}
+    }
+
+    # Should we put up the error dialog?
+    if( $error_dialog ) {
+	$button = $dialog->Show;
+    }
+}
+
+# ----------------------
+# proc add_group(void)
+# This is where you add a new group...
+sub add_group {
+    printf("Calling add_group(void)...\n") if( $DEBUG );
+
+    my($cancel) = ('Oopps');
+    my($dialog, $button, $found_group);
+
+    # Default, we should not put a error dialog...
+    $error_dialog = 0;
+
+    # Create the error dialog, just in case...
+    $dialog = $window->Dialog(-bitmap         => 'error',
+			      -default_button => $cancel,
+			      -buttons        => [$cancel]
+    );
+
+    # Do some error checks...
+    if ( $group_name eq "" ) {
+	# No groupname specified...
+	$dialog->configure(-text => 'You did not specify a group name...');
+
+	$error_dialog = 1;
+    } elsif( length($group_name) > 8 ) {
+	$dialog->configure(-text => 'The group name must be less than 9 characters...');
+
+	$error_dialog = 1;
+    } elsif( $group_id eq "" ) {
+	# No user id specified...
+	$dialog->configure(-text => 'You did not specify a group id...');
+
+	$error_dialog = 1;
+    } elsif( $group_name !~ /^[A-Za-z_][-_A-Za-z0-9]*$/ ) {
+	# The groupname consists of bogus character/-s..
+	$dialog->configure(-text => 'To avoid problems, please enter a groupname consisting of international lowercase letters and/or numbers...');
+
+	$error_dialog = 1;
+    } elsif( $group_name !~ /^[a-z][a-z0-9]+$/ && $bad_names_support ne 'b1' ) {
+	# The username starts with a bogus character...
+	$dialog->configure(-text => 'Please enter a groupname consisting of a lowercase letter followed by one or more lowercase letters or numbers. If you wish to use a name with underscores, dashes, or uppercase characters, please tick the \'Allow bad names\'...');
+
+	$error_dialog = 1;
+    } elsif( $group_id =~ /[A-Za-z]/ ) {
+	# The group id contains other characters than numbers...
+	$dialog->configure(-text => 'The user id must contain numbers (0 through 9) only!');
+
+	$error_dialog = 1;
+    } elsif( check_user_group($group_name, 'name', 'group') ) {
+	# Group already exist...
+	$dialog->configure(-text => "The group \`$group_name\' already exists...");
+
+	$error_dialog = 1;
+    } elsif( check_user_group($group_id, 'id', 'group') ) {
+	# Group ID already exist...
+	$dialog->configure(-text => "The group id \`$group_id\' already exists...");
+
+	$error_dialog = 1;
+    } else {
+	# Everything looks okay...
+
+	# Check for confirmation...
+	my( $ok, $cancel) = ('Add', 'Oopps');
+	$dialog = $window->Dialog(-bitmap         => 'question',
+				  -default_button => $ok,
+				  -wraplength     => '15i',
+				  -buttons        => [$ok, $cancel]
+	);
+
+	$dialog->configure(-text => "Add group:\n\nGroup name:\t$group_name\nGroup ID:\t$group_id\n");
+	$button = $dialog->Show;
+
+	# Check if it is okay to add the user...
+	if( $button eq $ok ) {
+	    # We have only one group...
+	    $max_groups = 1;
+
+	    # Edit the group file...
+	    edit_group($group_name, 'create');
+
+	    # Zero out the user...
+	    $group_name = "";
+	    $group_id   = "";
+	}
+    }
+
+    # Should we put up the dialog?
+    if( $error_dialog ) {
+	$button = $dialog->Show;
+    }
+}
+
+# ----------------------
+# proc rem_group( group )
+# This is where you remove a old group...
+sub rem_group {
+    # group   - Group to remove...
+    local($group) = @_;
+
+    printf("Calling rem_group($group)...\n") if( $DEBUG );
+
+    # Remove user from passwd file...
+    edit_group($group, 'rem');
+
+    $window->destroy;
+    main();
+}
+
+# ----------------------
+# proc add_usr_to_grp( user, group )
+# This is where you add a user to an existing group...
+sub add_usr_to_grp {
+    # user  - User to add
+    # group - Group to add user to
+    local($user, $group) = @_;
+
+    printf("Calling add_usr_to_grp($user, $group)...\n") if( $DEBUG );
+    printf("  'Add user to group' not yet implemented...\n");
+}
+
+# ----------------------
+# proc rem_usr_from_grp( user, group )
+# This is where you remove a user from an existing group...
+sub rem_usr_from_grp {
+    # user  - User to add
+    # group - Group to remove user from
+    local($user, $group) = @_;
+
+    printf("Calling rem_usr_from_grp($user, $group)...\n") if( $DEBUG );
+    printf("  'Remove user from group' not yet implemented...\n");
+}
+
+# ----------------------
+# proc add_user_GUI(void)
+# Creates the GUI for add_user()...
+sub add_user_GUI {
+    printf("Calling add_user_GUI(void)...\n") if( $DEBUG );
+
+    # Clear the main window...
+    $window->UnmapWindow;
+
+    # Create the new window...
+    $window = MainWindow->new();
+
+    # Change the main window...
+    $window->title('Add user');
+    $window->iconname('AddUser');
+
+    # Create the Main buttons...
+    main_buttons($window, 'adduser');
+
+    # Prepare the Action buttons...
+    $main_top     = $window->Frame;
+    $main_middle1 = $window->Frame;
+    $main_middle2 = $window->Frame;
+    $main_bottom  = $window->Frame;
+    @pl = (-side   => 'top',
+	   -expand => 'yes',
+	   -pady   => '.3c'
+    );
+    $main_top->pack(@pl);
+    $main_middle1->pack(@pl);
+    $main_middle2->pack(@pl);
+    $main_bottom->pack(@pl);
+
+    # Create the menu...
+    main_menu($main_top);
+
+    # Prepare the Input gadgets...
+    $inputs_left  = $main_bottom->Frame;
+    $inputs_right = $main_bottom->Frame;
+    @pl = (-side   => 'left',
+	   -expand => 'yes',
+	   -fill   => 'x',
+	   -padx   => '.5c',
+	   -pady   => '2'
+    );
+    $inputs_left->pack(@pl);
+    $inputs_right->pack(@pl);
+
+    # Create the Group buttons...
+    group_buttons();
+
+    # Create the Shell buttons...
+    shell_buttons();
+
+    # Create the Input buttons...
+    user_input_buttons('add');
+
+    # Create a 'additional info' button...
+    additional_info_button();
+}
+
+# ----------------------
+# proc rem_user_GUI(void)
+# Creates the GUI for rem_user()...
+sub rem_user_GUI {
+    printf("Calling rem_user_GUI(void)...\n") if( $DEBUG );
+
+    # Clear the main window...
+    $window->UnmapWindow;
+
+    # Create window...
+    $window = MainWindow->new();
+
+    # Change the main window...
+    $window->title('Remove user');
+    $window->iconname('RemoveUser');
+
+    # Create the Main buttons...
+    main_buttons($window, 'remuser');
+
+    # Prepare the Action buttons...
+    $main_top    = $window->Frame;
+    $main_bottom = $window->Frame;
+    @pl = (-side   => 'top',
+	   -expand => 'yes',
+	   -pady   => '.3c'
+    );
+    $main_top->pack(@pl);
+    $main_bottom->pack(@pl);
+
+    # Create the menu...
+    main_menu($main_top);
+
+    # Prepare the listview...
+    $list_view = $main_bottom->Frame(-borderwidth => '.5c');
+    @pl = (-side        => 'top',
+	   -expand      => 'yes',
+	   -fill        => 'y',
+    );
+    $list_view->pack(@pl);
+
+    # Create some leading text...
+    $msg = $list_view->Label(-font     => $config{win_font},
+			     -justify  => 'left',
+			     -text     => 'What user do you want to remove?'
+    );
+    $msg->pack;
+
+    # Create a listview...
+    input_list('user', 0, 1);
+}
+
+# ----------------------
+# proc add_group_GUI(void)
+# Creates the GUI for add_group()...
+sub add_group_GUI {
+    printf("Calling add_group_GUI(void)...\n") if( $DEBUG );
+
+    # Clear the main window...
+    $window->UnmapWindow;
+
+    # Create the new window...
+    $window = MainWindow->new();
+
+    # Change the main window...
+    $window->title('Add group');
+    $window->iconname('AddGroup');
+
+    # Create the Main buttons...
+    main_buttons($window, 'addgroup');
+
+    $inputs_top    = $window->Frame;
+    $inputs_bottom = $window->Frame;
+    @pl = (-side   => 'top',
+	   -expand => 'yes',
+	   -pady   => '.3c'
+    );
+    $inputs_top->pack(@pl);
+    $inputs_bottom->pack(@pl);
+
+    $inputs_left  = $inputs_bottom->Frame;
+    $inputs_right = $inputs_bottom->Frame;
+    @pl = (-side   => 'left',
+	   -expand => 'yes',
+	   -fill   => 'x',
+	   -padx   => '.5c',
+	   -pady   => '2'
+    );
+    $inputs_left->pack(@pl);
+    $inputs_right->pack(@pl);
+
+    # Create some leading text...
+    $msg = $inputs_top->Label(-font     => $config{win_font},
+			      -justify  => 'left',
+			      -text     => 'What group do you want to add?'
+    );
+    $msg->pack;
+
+    # Create the Input buttons...
+    group_input_buttons('add');    
+}
+
+# ----------------------
+# proc rem_group_GUI(void)
+# Creates the GUI for rem_group()...
+sub rem_group_GUI {
+    printf("Calling rem_group_GUI(void)...\n") if( $DEBUG );
+
+    # Clear the main window...
+    $window->UnmapWindow;
+
+    # Create the new window...
+    $window = MainWindow->new();
+
+    # Change the main window...
+    $window->title('Remove group');
+    $window->iconname('RemGroup');
+
+    # Create the Main buttons...
+    main_buttons($window, 'remgroup');
+
+    # Prepare the listview...
+    $list_view = $window->Frame(-borderwidth => '.5c');
+    @pl = (-side        => 'top',
+	   -expand      => 'yes',
+	   -fill        => 'y',
+    );
+    $list_view->pack(@pl);
+
+    # Create some leading text...
+    $msg = $list_view->Label(-font     => $config{win_font},
+			     -justify  => 'left',
+			     -text     => 'What group do you want to remove?'
+    );
+    $msg->pack;
+
+    # Create the Input buttons...
+    input_list('group', 0, 1);
+}
+
+# ----------------------
+# proc add_usr_to_grp_GUI(void)
+# Creates the GUI for add_usr_to_grp()...
+sub add_usr_to_grp_GUI {
+    printf("Calling add_usr_to_grp_GUI(void)...\n") if( $DEBUG );
+
+    # So that we don't get 'Use of uninitialized value' later...
+    # We don't care about quota in this function...
+    $shadow_support = "no";
+
+    # Clear the main window...
+    $window->UnmapWindow;
+
+    # Create the new window...
+    $window = MainWindow->new();
+
+    # Change the main window...
+    $window->title('Add user to group');
+    $window->iconname('AddUsrToGrp');
+
+    # Create the Main buttons...
+    main_buttons($window, 'addusrtogrp');
+
+    # ---------------------------------------
+
+    # Prepare for the two listviews...
+    $left  = $window->Frame;
+    $right = $window->Frame;
+    @pl = (-side   => 'left',
+	   -expand => 1,
+	   -padx   => '.5c',
+	   -pady   => '.1c'
+    );
+    $left->pack(@pl);
+    $right->pack(@pl);
+
+    # Prepare the user listview...
+    $list_view = $left->Frame(-borderwidth => '.5c');
+    @pl = (-side        => 'top',
+	   -expand      => 'yes',
+	   -fill        => 'y',
+    );
+    $list_view->pack(@pl);
+
+    # Create some leading text...
+    $msg = $list_view->Label(-font     => $config{win_font},
+			     -justify  => 'left',
+			     -text     => 'What user do you want to add?'
+    );
+    $msg->pack;
+
+    # Create a listview...
+    input_list('user', 2, 1);
+
+    # ---------------------------------------
+
+    # Prepare the group listview...
+    $list_view = $right->Frame(-borderwidth => '.5c');
+    @pl = (-side        => 'top',
+	   -expand      => 'yes',
+	   -fill        => 'y',
+    );
+    $list_view->pack(@pl);
+
+    # Create some leading text...
+    $msg = $list_view->Label(-font     => $config{win_font},
+			     -justify  => 'left',
+			     -text     => 'To what group?'
+    );
+    $msg->pack;
+
+    # Create a listview...
+    input_list('group', 2, 2);
+}
+
+# ----------------------
+# proc rem_usr_from_grp_GUI(void)
+# Creates the GUI for rem_usr_from_grp()...
+sub rem_usr_from_grp_GUI {
+    printf("Calling rem_usr_from_grp_GUI(void)...\n") if( $DEBUG );
+
+    # So that we don't get 'Use of uninitialized value' later...
+    # We don't care about quota in this function...
+    $shadow_support = "no";
+
+    # Clear the main window...
+    $window->UnmapWindow;
+
+    # Create the new window...
+    $window = MainWindow->new();
+
+    # Change the main window...
+    $window->title('Remove user from group');
+    $window->iconname('RmUsrFrmGrp');
+
+    # Create the Main buttons...
+    main_buttons($window, 'remusrfrmgrp');
+
+    # ---------------------------------------
+
+    # Prepare for the two listviews...
+    $left  = $window->Frame;
+    $right = $window->Frame;
+    @pl = (-side   => 'left',
+	   -expand => 1,
+	   -padx   => '.5c',
+	   -pady   => '.1c'
+    );
+    $left->pack(@pl);
+    $right->pack(@pl);
+
+    # Prepare the user listview...
+    $list_view = $left->Frame(-borderwidth => '.5c');
+    @pl = (-side        => 'top',
+	   -expand      => 'yes',
+	   -fill        => 'y',
+    );
+    $list_view->pack(@pl);
+
+    # Create some leading text...
+    $msg = $list_view->Label(-font     => $config{win_font},
+			     -justify  => 'left',
+			     -text     => 'What user do you want to remove?'
+    );
+    $msg->pack;
+
+    # Create a listview...
+    input_list('user', 3, 1);
+
+    # ---------------------------------------
+
+    # Prepare the group listview...
+    $list_view = $right->Frame(-borderwidth => '.5c');
+    @pl = (-side        => 'top',
+	   -expand      => 'yes',
+	   -fill        => 'y',
+    );
+    $list_view->pack(@pl);
+
+    # Create some leading text...
+    $msg = $list_view->Label(-font     => $config{win_font},
+			     -justify  => 'left',
+			     -text     => 'From what group?'
+    );
+    $msg->pack;
+
+    # Create a listview...
+    input_list('group', 3, 2);
+}
+
+# ----------------------
+# proc additional_info_button(void)
+# Create a 'additional info' button...
+sub additional_info_button {
+    printf("Calling additional_info_button(void)...\n") if( $DEBUG );
+
+    # Create the button...
+    $addit_butt = $inputs_right->Button(-text    => 'Additional info',
+					-width   => 10,
+					-command => [\&additional_info]
+    );
+    $addit_butt->pack;
+}
+
+# ----------------------
+# proc edit_group( user, action )
+# Add or remove a user from the group file...
+sub edit_group {
+    # group  - Group to add, remove or create
+    # action - What to do
+    #          add
+    #          remove
+    #          create
+    local($group, $action) = @_;
+
+    printf("Calling edit_group($group, $action)...\n") if( $DEBUG );
+
+    # Open the old group file...
+    open(OLD_GROUP, $config{group}) || die "Could not open $config{group}!!!\n";
+
+    # Open the new group file...
+    open(NEW_GROUP, ">$config{group}.new") || die "Could not open $config{group}.new!!!\n";
+
+#    printf("  Added old: ") if( $DEBUG );
+
+    # Read in the group file, line by line
+    $added_new_one = 0;
+    while($group_line = <OLD_GROUP>) {
+	# Split the line...
+	@line = split(':', $group_line);
+
+	# Find out if the 3d entry is empty or not...
+	if(! $line[3]) {
+	    $line[3] = "";
+	}
+
+	# As default, the new line equals the old line...
+	$new_group_entry = $group_line;
+
+	# Go trough each group one by one...
+	for( $i = 0; $i < $max_groups; $i++ ) {
+	    # Should we add or remove a user from an existing group?
+	    if( $action eq 'add' ) {
+		# We should add a user to a group...
+
+		# Check if this group is choosen...
+		if( $grp{$i} == 1 ) {
+		    # Find out if the group is the same as the primary group...
+		    if($group_name{$i} ne $prim_grp) {
+			# Check if the first entry is equal to any of the extra groups choosen..
+			if($line[0] eq $group_name{$i}) {
+			    # Find out if the 3d entry is empty or not...
+			    if($line[3]) {
+				$new = ",$group";
+			    } else {
+				$new = $group;
+			    }
+
+			    # Add the user name the the 3:d feld...
+			    $new_group_entry = "$group_line$new";
+			}
+		    }
+		}
+	    } elsif( $action eq 'greate' ) {
+		# We should create a new group...
+
+		# Check if we should leave the last line last (NIS)...
+		if( $config{'keep_nis_at_end'} ne 'no' ) {
+		    # Hmmm... ?
+		    if( $line[0] =~ m/^\+/ ) {
+			$new_gid = $group_id;
+		    } else {
+			$new_gid = 0;
+		    }
+		} else {
+		    # Just to keep perl happy...
+		    $new_gid = 0;
+		}
+
+		if( $new_gid < $group_id || $added_new_one ) {
+		    # Store the old line...
+		    $new_group_entry = $group_line;
+#		    printf(".") if( $DEBUG );
+		} else {
+		    # Create the new line...
+		    $new_group_entry = "$group:*:$group_id:\n";
+#		    printf("\n    Added new: $group") if( $DEBUG );
+
+		    $added_new_one = 1;
+		}
+	    } elsif( $action eq 'rem' ) {
+		# We should remove a group...
+
+		# Find out if the first entry in the passwd file is equal to the user name...
+		if($line[0] eq $group) {
+		    $new_group_entry = "";
+
+		    $added_new_one    = 1;
+		} else {
+		    $new_group_entry = $group_line;
+#		    printf(".") if( $DEBUG );
+		}
+	    }
+	}
+
+	# Print the new line to the group file...
+	printf NEW_GROUP $new_group_entry;
+    }
+
+    # Make sure the new group is added...
+    if(! $added_new_one ) {
+	$new_group_entry = "$group:*:$group_id:\n";
+
+	# Print the new line to the group file...
+	printf NEW_GROUP $new_group_entry;
+#	printf("\n    Added NEW: $group") if( $DEBUG );
+    }
+#    printf("\n");
+
+    # Close the both files...
+    close( NEW_GROUP );
+    close( OLD_GROUP );
+
+    # Rename the files...
+    rename("$config{group}.new", $config{group});
+}
+
+# ----------------------
+# proc edit_nis_db(void)
+# Update the nis database...
+sub edit_nis_db {
+    printf("Calling edit_nis_db(void)...\n") if( $DEBUG );
+
+    # Shell command: 'cd /var/yp/`domainname`; make -f ../Makefile PASSWD=/tmp/npasswd passwd'
+}
+
+# ----------------------
+# proc convert_shadow(void)
+# Convert the shadow file, and join it with the passwd file, so
+# that we have a propper passwd file with passwords...
+# Creates the file /tmp/npasswd
+sub convert_shadow {
+    my( $i, $j, $shadow_line, $passwd_line, $tot_shad, $tot_pass, $max_lines);
+
+    printf("Calling convert_shadow(void)...\n") if( $DEBUG );
+
+    # Read in the shadow file...
+    open( SHADOW, $config{shadow} ) || die "Could not open $config{shadow}!!!\n";
+    $i = 0;
+    while($shadow_line{$i} = <SHADOW>) {
+#	printf("(S) $i: $shadow_line{$i}");
+	$i++;
+    }
+
+    # Remember number of lines in the shadow file...
+    $tot_shad = $i;
+
+    # Close the shadow file...
+    close( SHADOW );
+
+    # Read in the passwd file...
+    open( PASSWD, $config{passwd} ) || die "Could not open $config{passwd}!!!\n";
+    $j = 0;
+    while($passwd_line{$j} = <PASSWD>) {
+#	printf("(P) $j: $passwd_line{$j}");
+	$j++;
+    }
+
+    # Remember number of lines in the passwd file...
+    $tot_pass = $j;
+
+    # Close the passwd file...
+    close( PASSWD );
+
+    # Check which file is largest...
+    if($tot_shad == $tot_pass) {
+	$max_lines = $tot_pass;
+    } elsif ($tot_shad > $tot_pass) {
+	$max_lines = $tot_shad;
+    } else {
+	$max_lines = $tot_shad;
+    }
+
+    # Open the new passwd file...
+    open( NEW_PASSWD, ">$config{npasswd}" ) || die "Could not open $config{npasswd} (The converted shadow file)!!!\n";
+    
+    # Now, when both files is loaded, join the passwd entry
+    # from the shadow file, with the passwd file...
+    for( $i = 0; $i < $tot_shad; $i++ ) {
+	# Split the shadow line...
+	@shad = split(':', $shadow_line{$i});
+
+	# Split the passwd line...
+	@pass = split(':', $passwd_line{$i});
+
+	# Join the intressting part from the two files:
+	#  username and passwd from the shadow file,
+	#  the rest from the passwd file...
+	@new_line = "$shad[0]:$shad[1]:$pass[2]:$pass[3]:$pass[4]:$pass[5]:$pass[6]";
+
+	# We have a new passwd entry... Hipp, hipp hurray... :)
+#	printf("$i: @new_line");
+
+	# Print the entry line to the new passwd file...
+	printf NEW_PASSWD @new_line;
+    }
+
+    # Close the new passwd file...
+    close( NEW_PASSWD );
+}
+
+# ----------------------
+# proc convert_passwd(void)
+# Split the passwd file in a world readable file without passwords,
+# and a shadow file with the passwords...
+sub convert_passwd {
+    my $ok = 'Okay';
+    my( $i, $file, $passwd_line, $tot_pass, $button, $dialog);
+
+    printf("Calling convert_passwd(void)...\n") if( $DEBUG );
+
+    # Check if we support shadow...
+    if( $shadow_support eq 'yes' ) {
+	$file = $config{npasswd};
+    } else {
+	$file = $config{passwd};
+    }
+
+    # Read in the passwd file...
+    if( ! open( PASSWD, $file )) {
+	$dialog = $window->Dialog(-text           => 'You first have to have a original passwd file (WITH passwords) that can be split in a passwd file without passwords, and a shadow file with the passwords...',
+				  -bitmap         => 'error',
+				  -default_button => $ok,
+				  -buttons        => [$ok]
+        );
+	$button = $dialog->Show;
+    }
+
+    $i = 0;
+    while($passwd_line{$i} = <PASSWD>) {
+	printf("(P) $i: $passwd_line{$i}");
+	$i++;
+    }
+
+    # Remember no lines in the passwd file...
+    $tot_pass = $i;
+
+    # Close the passwd file...
+    close( PASSWD );
+
+    # Open the new passwd file...
+    open( PASSWD, ">$config{npasswd}" ) || die "Could not open $config{npasswd}!!!\n";
+
+    # Open the new shadow file...
+    open( SHADOW, ">$config{nshadow}" ) || die "Could not open $config{nshadow}!!!\n";
+
+    # Now that the passwd file is loaded, create a new passwd file
+    # and a shadow file...
+    for( $i = 0; $i < $tot_pass; $i++ ) {
+	# Split the passwd line...
+	@pass = split(':', $passwd_line{$i});
+
+	# First, create the passwd line...
+	@pass = "$pass[0]:x:$pass[2]:$pass[3]:$pass[4]:$pass[5]:$pass[6]";
+
+	# Now, create the shadow line:
+	#   1. User login name
+	#   2. Encrypted password
+	#   3. Password change
+	#   4. Days until change allowed.
+	#   5. Days before change required
+	#   6. Days warning for expiration
+	#   7. Days before  account  inactive
+	#   8. Date when account expires
+	#   9. Reserved for future use
+	@shad = "$pass[0]:$pass[1]:$config{shad_change}:$config{shad_allowed}:$config{shad_required}:$config{shad_warn}:$config{shad_inactive}:$config{shad_expired}:";
+
+	# Write the respective lines to the respective file...
+	printf PASSWD @pass;
+	printf SHADOW @shad;
+    }
+
+    # Close the new files...
+    close( PASSWD );
+    close( SHADOW );
+}

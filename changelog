@@ -1,0 +1,25 @@
+xadmin (1.0.17-1) unstable; urgency=low
+
+  * Initial Release.
+
+ -- Turbo Fredriksson <turbo@debian.org>  Sun, 30 Aug 1998 13:29:51 -0700
+
+xadmin (1.0.16-2) unstable; urgency=low
+
+  * Fixed bugs with the wrong permissions on files in '/etc'...
+  * Rewrote the 'save_{passwd|group}_files()' functions, so that when
+    creating a debian package, I will follow the Debian guidelines.
+  * Started conversion to debhelper.
+  * Make sure we install the libraries to... *blush*
+        
+ -- Turbo Fredriksson <turbo@debian.org>  Fri, 31 Jul 1998 23:35:47 -0700
+
+xadmin (1.0.15-1) unstable frozen; urgency=low
+
+  * Fixing 'Bug#19992: xadmin: No menu entry'
+  * Fixing 'Bug#19995: xadmin: Can't exec "/bin/domainname"'
+  * Fixed a undiscovered bug that made the listbox skip the
+  *   passwd entries if we wasn't running a NIS master...
+
+ -- Turbo Fredriksson <turbo@debian.org>  Sat, 21 Mar 1998 17:27:15 +0100
+

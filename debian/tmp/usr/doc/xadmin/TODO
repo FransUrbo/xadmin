@@ -1,0 +1,10 @@
+* xedit-users
+  1. Fix the editing of the NIS database.
+  2. Fix the possibility to CHANGE the quota
+     for a user or group.
+
+* xedit-dns
+  1. When loading the boot file, sometimes the
+     zone and reverse entries comes in different
+     order, which fuckes up everything... *grrr*
+     Search for '# Count up one domain...'.

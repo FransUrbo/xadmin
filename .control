@@ -1,0 +1,14 @@
+Source: xadmin
+Section: admin
+Priority: optional
+Maintainer: Turbo Fredriksson <turbo@debian.org>
+Standards-Version: 2.4.0.0
+
+Package: xadmin
+Architecture: all
+Depends: perl, perl-tk
+Description: A system admin/config tool for X-Windows.
+ So far only the user/group/network and dns editor is
+ done, but a fs/runlevel and printer editor is in the
+ works. Still some bugs, especially in the quota area,
+ but works resonably well though.

@@ -1,0 +1,1403 @@
+#!/usr/bin/perl -w
+
+# ----------------------
+# $Log: xedit-net,v $
+# Revision 1.21  1998/08/30 20:20:57  turbo
+# * When we are adding a ethernet interface, we should use the number of the
+#   interface, instead of 0...
+# * When removing a interface, undefine the whole set of variables for this
+#   interface... ($interface_{name,addr,netw,mask,broa,gate} etc.)
+# * When loading the hosts and the network start files, REMEMBER HOW MANY ENTRIES
+#   WE HAD!!! *blush*
+#   .
+#   Also, don't forget to set the type of the interface (ethernet, loopback etc...),
+#   or the ACTIVATE status...
+# * In the 'Interfaces' listbox, use 'interface eth0 (ethernet)' as line.
+# * More debug output, to find some bugs...
+#
+# Revision 1.20  1998/02/22 21:47:19  turbo
+# Forgot an 'esac' (end of case) when created the network start script...
+#
+# Revision 1.19  1998/02/22 00:16:48  turbo
+# * Removed the option to edit a PPP and/or (C)SLIP device, the code is not
+#   finished yet...
+# * Spellcheck and fix...
+# * Activate eth0 on boot as default, add default if adding a PPP/SLIP device
+# * Create a bigger and more advanced network start script 'network start eth0'
+#   for example... 'network start' starts ALL the configured devices...
+#
+# Revision 1.18  1998/01/16 14:55:55  turbo
+# Perl changed the way it handled file handles... When we cyckle through the
+# file, make sure we only do that while ! eof.
+#
+# Revision 1.17  1997/10/28 16:55:46  turbo
+# When we deleted a nameserver, it wasn't deleted properly from the global
+# variable list...
+#
+# Revision 1.16  1997/09/24 16:36:15  turbo
+# * Added the possibility for the envvar 'XADMIN_DEBUG'...
+# * Forgot more 'if( $DEBUG )'... *sich*
+#
+# Revision 1.15  1997/09/22 03:41:08  turbo
+# * When creating a interface, have the option to enter the host/domainname
+#   right away, no point in waiting... :)
+# * When creating the network start script, we create a variable,
+#   'ACTIVATE_<interface>=[01]', that we check just before we start the interface.
+# * When creating a loopback interface, we do not need to give the 'hosts'
+#   defaults, this is taken care of when pressing 'Done'...
+#   Also, make sure we tick the 'Activate interface at boot' button...
+# * Don't offer 'Use bridging' unless we are creating/editing a 'ethernet'
+#   interface... *blush*
+# * Fixed a bugg conserning the hosts file/variable list... They wherent always
+#   updated propperly... Now it works... (until I brake it again... :)
+#
+# Revision 1.14  1997/09/19 03:13:54  turbo
+# When adding a loopback, more or less configure the interface automaticly,
+#   a loopback looks the same on all machines, right? (I hope... :)
+#
+# Revision 1.13  1997/08/24 01:12:24  turbo
+# * When adding a loopback device, give a default network address instead
+#   of a netmask...
+# * Darn... Having a tab between the variable name and the value dont work..
+# * Fixed some buggs in the creation of the network start script.
+#
+# Revision 1.12  1997/09/23 22:23:28  turbo
+# * When changing the hostname/domainname, update the button at the top...
+# * Fixed the read_hosts(), read_resolv() and the save_hostname() functions...
+# * Got the loading of an existing network start script to work propperly...
+# * When creating the network start script, set the host- and domainname to.
+# * After creating the new files successfully, rename them...
+#
+# Revision 1.11  1997/09/23 13:46:05  turbo
+# * Hostname should be 'noname' as default, incase we are starting from scratch.
+# * Add the '<hostname>.<domainname>' button at the top of the window, incase
+#   we want to change it...
+# * Added the function 'edit_name()', to make the changing of the hostname
+#   possible...
+# * Added the function 'save_domain()', to make the changing of the domainname
+#   possible...
+#
+# Revision 1.10  1997/08/16 19:20:09  turbo
+# * Added a new input gadget to the 'Edit network' window.
+# * Finnished the 'save_resolv()' and the 'save_hosts()'.
+# * If choosing/adding a loopback device, give other default values, than an
+#   ethernet device...
+# * Added support for bridging, so faar only between eth0 and eth1...
+# * Modified the 'read_network()' a little, since I changed the variable names
+#   a little. Does not call the function yet though...
+#
+# Revision 1.9  1997/08/13 12:05:06  turbo
+# * Added some default interface names (If 'ethernet', 'eth0', 'eth1' etc).
+# * If choosing a interface type, give only the relevant names in the
+#   'Interface name' menubutton.
+# * When editing a Nameserver entry, remove it from the listbox, and insert
+#   it in the input gadget.
+# * Fixed all the support functions, now it can do everything, but save all
+#   the different files.
+# * When editing a interface, calculate some defaults from the IP address,
+#   such as etworkaddress, netmask, broadcast and gateway...
+# * When removing a host, nameserver or interface, make sure it is removed
+#   from the variable list and that the list is in the right order, without
+#   any gaps.
+#
+# Revision 1.8  1997/08/12 09:46:04  turbo
+# Completly remade the GUI... It is now MUCH cleaner...
+#
+# Revision 1.7  1997/08/10 14:32:06  turbo
+# Just added more detailed debugging. 0 is no debugging, 1 is total debugging
+# and 2 is real action but with debug output.
+#
+# Revision 1.6  1997/08/02 17:19:56  turbo
+# Changed the variable $CONFIG_DIR to contain '/etc/xadmin' instead
+#   of just '/etc'.
+#
+# Revision 1.5  1997/08/02 16:47:27  turbo
+# Added some 'if( $DEBUG )' to the printf's. Debug output only if DEBUG eq 1.
+#
+# Revision 1.4  1997/08/02 16:08:54  turbo
+# Moved the variable '$DEBUG' higher upp in the source code, and also shortened
+#   the line a little (so it could be changed with 'sed' easier).
+#
+# Revision 1.3  1997/07/22 07:42:15  turbo
+# Added the possibility to have more than one network interface,
+#   (eth[012], ppp[012], sl[012]).
+#
+# Revision 1.2  1997/04/27 01:39:51  turbo
+# xedit-users:
+#   * Changed the default directory to store the removed/frozen user dirs to
+#     '/var/removed_dirs'.
+# xedit-net:
+#   * Added possibility to read in an old network start script, and act upon
+#     what that cointain...
+#   * Started adding the possibility to have more than one interface...
+#
+# Revision 1.1  1997/04/26 21:49:13  turbo
+# This the initial version of the network editor. So faar you can only create
+# a 'host config' from scratch. It does not take in acount if you already
+# have a network configuration...
+#
+
+use Tk;
+use Tk::Dialog;
+use Tk::ErrorDialog;
+
+# DEBUG = 0    =>   Ingen debugging, real actions
+# DEBUG = 1    =>   Virtual file system, debug output
+# DEBUG = 2    =>   Real actions, debug output
+$DEBUG  = 0;
+
+# Check if we have the variable XADMIN_DEBUG...
+if($ENV{'XADMIN_DEBUG'}) {
+    $DEBUG = $ENV{'XADMIN_DEBUG'}
+}
+
+# Zero these variables, so that pine stop complaining about them being 'used only once'...
+# They are used in '$defaults{lib_dir}/xadmin.pl'...
+$HOME          = "";  $CONFIG_DIR    = "";
+$CONFIG_FILE   = "";  $domain        = "";
+
+$CONFIG_DIR                      = '/etc/xadmin';
+$CONFIG_FILE                     = 'xedit-net';
+$hostname                        = "noname";
+$main_button_3                   = "";
+
+# Some defaults...
+$defaults{win_font}              = "-*-Helvetica-Medium-R-Normal--*-140-*-*-*-*-*-*";
+if( $DEBUG == 1 ) {
+    $defaults{resolvconf}        = "./etc/resolv.conf";
+    $defaults{hosts}             = "./etc/hosts";
+    $defaults{netstart}          = "./etc/init.d/network";
+    $defaults{domainname}        = "./etc/defaultdomain";
+    $defaults{hostname}          = "./etc/HOSTNAME";
+    $defaults{lib_dir}           = "./lib";
+} else {
+    $defaults{resolvconf}        = "/etc/resolv.conf";
+    $defaults{hosts}             = "/etc/hosts";
+    $defaults{netstart}          = "/etc/init.d/network";
+    $defaults{domainname}        = "/etc/defaultdomain";
+    $defaults{hostname}          = "/etc/HOSTNAME";
+    $defaults{lib_dir}           = "/usr/lib/xadmin";
+}
+
+$HOME          = $ENV{'HOME'};
+$conf_checked  = 0;
+
+# Start with a loopback interface as default
+$interface{0}  = 'loopback';
+$interface_name{0} = 'lo';
+
+$interface_no  = 0;           # Start with no interface
+$host_no       = 0;
+
+$interfaces    = 0;           # As a start, we do not have any interfaces
+$nameservers   = 0;
+$hosts         = 0;
+
+$new_interface = 0;           # As default, we only have one interface to config
+
+$int_name{0}      = "lo";
+$int_name{1}      = "eth0 eth1 eth2 eth3";
+$int_name{2}      = "arc0 arc1 arc2 arc3";
+$int_name{3}      = "ppp0 ppp1 ppp2 ppp3";
+$int_name{4}      = "sl0 sl1 sl2 sl3";
+
+# Are we running in a X enviroment?
+# (Check if we have a DISPLAY variable)
+if($ENV{'DISPLAY'}) {
+    # Load the utilities library...
+    require "$defaults{lib_dir}/xadmin.pl";
+#   $drop_down_icon = "$config{lib_dir}/dropdown.xbm";
+
+    # Check the config file...
+    if(! $conf_checked ) {
+	$conf_checked = 1;
+
+	%config = get_config(%defaults);
+    }
+
+    main_net();
+    MainLoop;
+} else {
+    printf("Not running in a X enviroment...\n");
+    exit 1;
+}
+
+# ----------------------
+# proc main_net( void )
+# This is the main routine...
+sub main_net {
+    my($temp);
+    my($cancel) = 'Oopps';
+
+    if( Exists($main_net_window) ) {
+	return(0);
+    }
+
+    # Create the main window...
+    $main_net_window = MainWindow->new();
+
+    # Configure the Main window...
+    $main_net_window->title('XEdit-NET');
+    $main_net_window->iconname('xedit-net');
+    $main_net_window->ConfigSpecs(-resizeable => ['ACTIVE',undef,undef,1]);
+
+    # Vertical
+    (@pl1) = (-side   => 'top',
+	      -padx   => 6,
+	      -pady   => 4,
+	      -anchor => 'w',
+	      -fill   => 'both'
+    );
+    (@pl2) = (-side   => 'left',
+	      -expand => 'yes',
+	      -fill   => 'both'
+    );
+
+    # Horizontal
+    (@pl3) = (-side   => 'top',
+	      -expand => 'yes',
+	      -fill   => 'both'
+    );
+
+    # Create some vertical frames...
+    $main_menu       = $main_net_window->Frame->pack(@pl1);
+    $main_top        = $main_net_window->Frame->pack(@pl1);
+    $main_middle     = $main_net_window->Frame(-relief => 'groove', -bd => 2)->pack(@pl1, -expand => 'yes');
+    $main_bottom     = $main_net_window->Frame(-relief => 'groove', -bd => 2)->pack(@pl1);
+
+    # ----------------------------------------------------
+
+    # Create the menu frame...
+    $hostdomain_button = $main_menu->Button(-text    => "$hostname.$domain",
+					    -relief  => 'flat',
+					    -command => \&edit_name);
+    $hostdomain_button->pack(-side => 'top');
+
+    # ----------------------------------------------------
+
+    # Create the Interface frame...
+    $main_top_left   = $main_top->Frame(-relief => 'groove', -bd => 2)->pack(@pl2);
+    $main_top_left_1 = $main_top_left->Frame->pack(@pl3);
+    $main_top_left_2 = $main_top_left->Frame->pack(@pl3);
+    $main_top_left_3 = $main_top_left->Frame->pack(@pl3);
+    $main_top_left_4 = $main_top_left->Frame->pack(@pl3);
+    $main_top_left_1->Label(-text => 'Interfaces')->pack(-side => 'top', -anchor => 'n');
+
+    # The interface listbox...
+    $interface_listbox = $main_top_left_2->Listbox(-setgrid => 1,
+						   -height  => 4,
+						   -width   => 39,
+						   -font    => 'fixed'
+    );
+    $scroll = $main_top_left_2->Scrollbar(-command => [$interface_listbox => 'yview']);
+    $interface_listbox->configure(-yscrollcommand  => [$scroll => 'set']);
+    $scroll->pack(-side => 'right', -fill => 'y');
+    $interface_listbox->pack(-padx => 2, -pady => 2, -fill => 'both');
+    $interface_listbox->bind('<Double-Button-1>'   => sub{
+	get_list_entry('interface', $interface_listbox);
+    });
+
+    # The interface buttons...
+    $interface_butt_top = $main_top_left_3->Frame->pack(-side => 'top', -fill => 'x');
+    $interface_butt_top->Button(-text => 'Add',       -command => [\&add_interface])->pack(-side => 'left', -fill => 'x', -expand => 'yes');
+    $interface_butt_top->Button(-text => 'Configure', -command => sub{
+	get_list_entry('interface', $interface_listbox);
+    })->pack( -side => 'left', -fill => 'x', -expand => 1);
+    $interface_butt_top->Button(-text => 'Remove',    -command => [\&rem_interface])->pack(-side => 'left', -fill => 'x', -expand => 1);
+
+    $interface_butt_bottom = $main_top_left_4->Frame->pack(-side => 'top', -fill => 'x');
+    $interface_butt_bottom->Button(-text => 'Activate')->pack(  -side => 'left', -fill => 'both', -expand => 1);
+    $interface_butt_bottom->Button(-text => 'Deactivate')->pack(-side => 'left', -fill => 'both', -expand => 1);
+
+    # ----------------------------------------------------
+
+    # Create a crappy frame between the two top frames...
+    $main_top->Frame()->pack(-side => 'left', -padx => 2);
+
+    # ----------------------------------------------------
+
+    # Create the resolv frame...
+    $main_top_right   = $main_top->Frame(-relief => 'groove', -bd => 2)->pack(@pl2);
+    $main_top_right_1 = $main_top_right->Frame->pack(@pl3);
+    $main_top_right_2 = $main_top_right->Frame->pack(@pl3);
+    $main_top_right_3 = $main_top_right->Frame->pack(@pl3);
+    $main_top_right_4 = $main_top_right->Frame->pack(@pl3);
+    $main_top_right_1->Label(-text => 'Nameservers')->pack(-side => 'top', -anchor => 'n');
+
+    $resolv_listbox = $main_top_right_2->Listbox(-setgrid => 1,
+						 -height  => 4,
+						 -width   => 21,
+						 -font    => 'fixed'
+    );
+    $scroll = $main_top_right_2->Scrollbar(-command => [$resolv_listbox => 'yview']);
+    $resolv_listbox->configure(-yscrollcommand      => [$scroll => 'set']);
+    $scroll->pack(-side => 'right', -fill => 'y');
+    $resolv_listbox->pack(-padx => 2, -pady => 2, -fill => 'both');
+    $resolv_listbox->bind('<Double-Button-1>' => sub{
+	my($number, $i);
+
+	# Find out what entry is selected...
+	$number  = $resolv_listbox->index('active');
+
+	$ns_temp = $nameserver{$number};
+
+	# Rearange the variable...
+	for( $i = $number; $i <= $nameservers; $i++ ) {
+	    if( $nameserver{$i + 1} ) {
+		$nameserver{$i} = $nameserver{$i + 1};
+	    }
+	}
+
+	$nameservers--;
+	$nameserver{$nameservers} = "";
+
+	# Remove entry from listbox...
+	$resolv_listbox->delete($number, $number);
+    });
+
+    # The resolv input/buttons...
+    $resolv_button = $main_top_right_4->Frame->pack(-side => 'top', -fill => 'x');
+
+    $resolv_input = $main_top_right_3->Entry(-relief => 'sunken');
+    $resolv_input->configure(-textvariable => \$ns_temp);
+    $resolv_input->pack(-side => 'top', -fill => 'x', -expand => 1);
+    $resolv_input->bind('<Return>' => [\&edit_resolv]);
+
+    $resolv_button->Button(-text => 'Remove', -command => [\&rem_resolv])->pack(    -side => 'left', -fill => 'x', -expand => 1);
+
+    # ----------------------------------------------------
+
+    # Create the Hosts frame...
+    $main_middle_1 = $main_middle->Frame->pack(@pl3, -expand => 'no');
+    $main_middle_2 = $main_middle->Frame->pack(@pl3);
+    $main_middle_3 = $main_middle->Frame->pack(@pl3, -expand => 'no');
+    $main_middle_1->Label(-text => 'Hosts')->pack(-side => 'top', -anchor => 'n');
+
+    $hosts_listbox = $main_middle_2->Listbox(-setgrid => 1,
+					     -height  => 5,
+					     -font    => 'fixed'
+    );
+    $scroll = $main_middle_2->Scrollbar(-command => [$hosts_listbox => 'yview']);
+    $hosts_listbox->configure(-yscrollcommand    => [$scroll => 'set']);
+    $scroll->pack(-side => 'right', -fill => 'y');
+    $hosts_listbox->pack(-padx => 2, -pady => 2, -fill => 'both', -expand => 'yes');
+    $hosts_listbox->bind('<Double-Button-1>' => sub{edit_host('edit')});
+
+    # The hosts buttons...
+    $hosts_button = $main_middle_3->Frame->pack(-side => 'top', -fill => 'x');
+
+    $hosts_button->Button(-text => 'Add',    -command => [\&edit_host, 'add'])->pack(    -side => 'left', -fill => 'x', -expand => 1);
+    $hosts_button->Button(-text => 'Edit',   -command => [\&edit_host, 'edit'])->pack(   -side => 'left', -fill => 'x', -expand => 1);
+    $hosts_button->Button(-text => 'Remove', -command => [\&rem_host])->pack( -side => 'left', -fill => 'x', -expand => 1);
+
+    # ----------------------------------------------------
+
+    # Create the Main buttons...
+    main_buttons( $main_bottom, 'net' );
+
+    # Read in the network start script...
+    read_network();
+
+    # Read in the hosts file...
+    read_hosts();
+
+    # Read in the resolv.conf file...
+    read_resolv();
+}
+
+# ----------------------
+# proc add_interface( void )
+# Add a network interface
+sub add_interface {
+    printf("Calling add_interface(void)...\n") if( $DEBUG );
+
+    # Open a window...
+    if( Exists($add_interface_window) ) {
+	return(0);
+    }
+
+    $interface_no = $interfaces;
+
+    $add_interface_window = $main_net_window->Toplevel;
+
+    # Configure the window
+    $add_interface_window->title('Add interface');
+    $add_interface_window->iconname('add-interface');
+    $add_interface_window->ConfigSpecs(-resizeable => ['ACTIVE',undef,undef,1]);
+
+    # Create some frames...
+    $add_top    = $add_interface_window->Frame->pack(@pl1);
+    $add_bottom = $add_interface_window->Frame->pack(@pl1);
+
+    # Create two input gadgets...
+    $add_interface_inputs = $add_top->Frame(-width => 1, -bd => 1);
+    $add_interface_inputs->pack(-side => 'top', -fill => 'both');
+
+    foreach $i (0, 1) {
+	$add_interface_input_f{$i} = $add_interface_inputs->Frame(-bd => 1);
+
+	$add_interface_input_l{$i} = $add_interface_input_f{$i}->Label(-width  => 15);
+	$add_interface_input_e{$i} = $add_interface_input_f{$i}->Entry(-relief => 'sunken', -width =>  11);
+	$add_interface_input_b{$i} = $add_interface_input_f{$i}->Menubutton(-text => '?', -relief => 'raised');
+
+	$add_interface_input_f{$i}->pack(-side => 'top', -fill => 'x');
+	$add_interface_input_l{$i}->pack(-side => 'left');
+	$add_interface_input_e{$i}->pack(-side => 'left', -expand => 'yes', -fill => 'both');
+	$add_interface_input_b{$i}->pack(-side => 'right');
+    }
+
+    # Configure the Input gadgets...
+    $add_interface_input_l{0}->configure(-text => 'Interface type:');
+    $add_interface_input_l{1}->configure(-text => 'Interface name:');
+
+    $add_interface_input_e{0}->configure(-textvariable => \$interface{$interface_no});
+    $add_interface_input_e{1}->configure(-textvariable => \$interface_name{$interface_no});
+
+    # Configure the interface type menu button...
+    $j = 0;
+#    foreach $i ('loopback', 'ethernet', 'arcnet', 'ppp', '(c)slip') {
+    foreach $i ('loopback', 'ethernet', 'arcnet') {
+	$type{$j} = $i;
+
+	$add_interface_input_b{0}->command(-label => $i, -command => sub{
+	    my($number);
+
+	    # Get which type have been choosen in the type menu...
+	    $number = $add_interface_input_b{0}->cget('-menu')->index('active');
+	    $number--;
+
+	    $interface{$interface_no} = $type{$number};
+
+	    # Split the corresponding interface name...
+	    @iname = split(' ', $int_name{$number});
+	    $interface_name{$interface_no} = $iname[$interfaces-1];
+
+	    if( $add_interface_input_b{1} ) {
+		$add_interface_input_b{1}->destroy;
+	    }
+	    $add_interface_input_b{1} = $add_interface_input_f{1}->Menubutton(-text => '?', -relief => 'raised');
+	    $add_interface_input_b{1}->pack(-side => 'right');
+
+	    foreach $i (0, 1, 2, 3) {
+		if( $iname[$i] ) {
+		    $add_interface_input_b{1}->command(-label => $iname[$i], -command => sub{
+			my($number);
+
+			$number = $add_interface_input_b{1}->cget('-menu')->index('active');
+			$interface_name{$interface_no} = $iname[$number - 1];
+		    });
+		}
+	    }
+	});
+
+	$j++;
+    }
+
+    # ------------
+
+    # Start by focusing on the first input gadget...
+    $add_interface_input_e{1}->focus;
+
+    # Add the main buttons...
+    main_buttons( $add_bottom, 'net_add' );
+}
+
+# ----------------------
+# proc edit_interface( type ) ERROR
+# Edit and configure a interface
+sub edit_interface {
+    local( $type ) = @_;
+
+    printf("Calling edit_interface($type)...\n") if( $DEBUG );
+
+    # Open a window...
+    if( Exists($edit_interface_window) ) {
+	return(0);
+    }
+
+    $edit_interface_window = $main_net_window->Toplevel;
+
+    # Configure the window
+    if( $type eq 'conf' ) {
+	$edit_interface_window->title('Configure  interface');
+	$edit_interface_window->iconname('conf-interface');
+    } else {
+	$edit_interface_window->title('Add interface');
+	$edit_interface_window->iconname('add-interface');
+    }
+    $edit_interface_window->ConfigSpecs(-resizeable => ['ACTIVE',undef,undef,1]);
+
+    # Create some vertical frames...
+    $edit_interface_top    = $edit_interface_window->Frame->pack(@pl1);
+    $edit_interface_bottom = $edit_interface_window->Frame(-relief => 'groove', -bd => 2)->pack(@pl1);
+
+    # Create the input gadgets...
+    foreach $i (0, 1, 2, 3, 4, 5, 6, 7) {
+	$edit_interface_input_f{$i} = $edit_interface_top->Frame(-bd => 1);
+
+	$edit_interface_input_l{$i} = $edit_interface_input_f{$i}->Label;
+	$edit_interface_input_e{$i} = $edit_interface_input_f{$i}->Entry(-relief => 'sunken', -width => 20);
+
+	$edit_interface_input_f{$i}->pack(-side => 'top',   -fill => 'x');
+	$edit_interface_input_l{$i}->pack(-side => 'left');
+	$edit_interface_input_e{$i}->pack(-side => 'right');
+    }
+
+    # Configure the Input gadgets...
+    $edit_interface_input_l{0}->configure(-text => 'Network type');
+    $edit_interface_input_l{1}->configure(-text => 'Network device');
+    $edit_interface_input_l{2}->configure(-text => 'IP Address');
+    $edit_interface_input_l{3}->configure(-text => 'Full Name (FQDN)');
+    $edit_interface_input_l{4}->configure(-text => 'Class x Network address');
+    $edit_interface_input_l{5}->configure(-text => 'Netmask');
+    $edit_interface_input_l{6}->configure(-text => 'Broadcast address');
+    $edit_interface_input_l{7}->configure(-text => 'Gateway address');
+
+    $edit_interface_input_e{0}->configure(-textvariable => \$interface{$interface_no});
+    $edit_interface_input_e{1}->configure(-textvariable => \$interface_name{$interface_no});
+    $edit_interface_input_e{2}->configure(-textvariable => \$interface_addr{$interface_no});
+    $edit_interface_input_e{3}->configure(-textvariable => \$interface_host{$interface_no});
+    $edit_interface_input_e{4}->configure(-textvariable => \$interface_netw{$interface_no});
+    $edit_interface_input_e{5}->configure(-textvariable => \$interface_mask{$interface_no});
+    $edit_interface_input_e{6}->configure(-textvariable => \$interface_broa{$interface_no});
+    $edit_interface_input_e{7}->configure(-textvariable => \$interface_gate{$interface_no});
+
+    if( $interface_name{$interface_no} eq 'lo' ) {
+	# This is a loopback, special curcomstances...
+	$interface_addr{$interface_no} = "127.0.0.1";
+	$interface_host{$interface_no} = "localhost";
+	$interface_broa{$interface_no} = "127.255.255.255";
+	$interface_netw{$interface_no} = "127.0.0.0";
+	$interface_mask{$interface_no} = "";
+	$interface_gate{$interface_no} = "";
+
+	# Always activate the loopback as default...
+	$activate_interface{$interface_no} = 1;
+    } elsif( $interface_name{$interface_no} eq 'eth0' ) {
+	# Activate the first ethernet device as default...
+	$activate_interface{$interface_no} = 1;
+    } elsif( ($interface_name{$interface_no} =~ '^ppp') || ($interface_name{$interface_no} =~ '^sl') ) {
+	# This is a PPP or SLIP, special curcomstances...
+	$interface_addr{$interface_no} = "0.0.0.0";
+	$interface_host{$interface_no} = "";
+	$interface_broa{$interface_no} = "";
+	$interface_netw{$interface_no} = "";
+	$interface_mask{$interface_no} = "";
+	$interface_gate{$interface_no} = "";
+
+	# Don't activate a PPP/SLIP device as default...
+	$activate_interface{$interface_no} = 0;
+    }
+
+    # Bind action to the Input gadgets...
+    $edit_interface_input_e{0}->bind('<Return>' => sub{$edit_interface_input_e{1}->focus});
+    $edit_interface_input_e{1}->bind('<Return>' => sub{$edit_interface_input_e{1}->focus});
+    $edit_interface_input_e{2}->bind('<Return>' => sub{
+	if( $interface_addr{$interface_no} ) {
+	    my(@temp);
+
+	    @temp = split('\.', $interface_addr{$interface_no});
+
+	    if(! $interface_mask{$interface_no} ) {
+		$interface_mask{$interface_no} = "255.255.255.0";
+	    }
+
+	    if(! $interface_netw{$interface_no} ) {
+		$interface_netw{$interface_no} = "$temp[0].$temp[1].$temp[2].0";
+	    }
+
+	    if(! $interface_broa{$interface_no} ) {
+		$interface_broa{$interface_no} = "$temp[0].$temp[1].$temp[2].255";
+	    }
+
+	    if(! $interface_gate{$interface_no} ) {
+		$interface_gate{$interface_no} = "$temp[0].$temp[1].$temp[2].1";
+	    }
+
+	    $edit_interface_input_e{3}->focus;
+	} else {
+	    $edit_interface_input_e{1}->focus;
+	}
+    });
+    $edit_interface_input_e{3}->bind('<Return>' => sub{
+	$main_button_3->focus;
+    });
+    $edit_interface_input_e{4}->bind('<Return>' => sub{$edit_interface_input_e{5}->focus});
+    $edit_interface_input_e{5}->bind('<Return>' => sub{$edit_interface_input_e{6}->focus});
+    $edit_interface_input_e{6}->bind('<Return>' => sub{$edit_interface_input_e{1}->focus});
+
+    # Start by focusing on the third input gadget...
+    $edit_interface_input_e{2}->focus;
+
+    # Create the checkbutton, 'if activate at boot'...
+    $edit_interface_boot = $edit_interface_top->Frame->pack(-side => 'top');
+    $edit_interface_boot->Checkbutton(-text => 'Activate at boot', -variable => \$activate_interface{$interface_no})->pack(-side => 'left');
+    if( $interface{$interface_no} eq 'ethernet' ) {
+	# Bridge a loopback or a ppp? Gimme a break...
+	$edit_interface_boot->Checkbutton(-text => 'Use bridging', -variable => \$use_bridging{$interface_no}, -state => 'disabled')->pack(-side => 'left');
+    }
+
+    # Create the Main buttons...
+    main_buttons( $edit_interface_bottom, 'net_edit' );
+}
+
+# ----------------------
+# proc rem_interface( void )
+# Remove a interface
+sub rem_interface {
+    my($number, $i);
+
+    printf("Calling rem_interface(void)...\n") if( $DEBUG );
+
+    # Find out what entry is selected...
+    $number = $interface_listbox->index('active');
+    printf("  Deleting number $number ($interface_name{$number})...\n") if( $DEBUG );
+
+    # Rearange the variable...
+    for( $i = $number; $i <= $interfaces; $i++ ) {
+	if( $interface{$i + 1} ) {
+	    $interface{$i} = $interface{$i + 1};
+	}
+    }
+
+    # Count down the number of nameservers, and delete the last variable...
+    undef $interface{$number};
+    undef $interface_name{$number};
+    undef $interface_addr{$number};
+    undef $interface_netw{$number};
+    undef $interface_mask{$number};
+    undef $interface_broa{$number};
+    undef $interface_gate{$number};
+    undef $activate_interface{$number};
+    undef $use_bridging{$number};
+
+    $interfaces--;
+    printf("  Number of interfaces: $interfaces\n") if( $DEBUG );
+
+    if( $DEBUG ) {
+	# Just to verify that the rearange works...
+	for( $i = 0; $interface{$i}; $i++ ) {
+	    printf("  $i. $interface{$i}\n");
+	}
+    }
+
+    # Remove entry from listbox...
+    $interface_listbox->delete($number, $number);
+}
+
+# ----------------------
+# proc edit_resolv( void )
+# Edit a nameserver entry
+sub edit_resolv {
+    my($number);
+
+    printf("Calling edit_resolv(void)...\n") if( $DEBUG );
+
+    $number = $resolv_listbox->index('active');
+
+    if( $ns_temp =~ /[A-Za-z_]/ ) {
+	# Create the error dialog...
+	$dialog = $main_net_window->Dialog(-text           => 'Only numerical IP addresses, please',
+					   -default_button => $cancel,
+					   -buttons        => [$cancel]
+	)->Show;
+    } else {
+	$nameserver{$nameservers} = $ns_temp;
+	$resolv_listbox->insert('end', $nameserver{$nameservers});
+
+	$nameservers++;
+    }
+
+    $ns_temp = "";
+}
+
+# ----------------------
+# proc rem_resolv( void )
+# Remove a nameserver
+sub rem_resolv {
+    my($number, $i);
+
+    printf("Calling rem_resolv(void)...\n") if( $DEBUG );
+
+    # Find out what entry is selected...
+    $number = $resolv_listbox->index('active');
+
+    if( $nameservers ) {
+	# Rearange the variable...
+	for( $i = $number; $i <= $nameservers; $i++ ) {
+	    if( $nameserver{$i + 1} ) {
+		$nameserver{$i} = $nameserver{$i + 1};
+	    }
+	}
+
+	# Count down the number of nameservers, and delete the last variable...
+	$nameservers--;
+	$nameserver{$nameservers} = "";
+    }
+
+    # Just to verify that the rearange works...
+#    for( $i = 0; $nameserver{$i}; $i++ ) {
+#	printf("  $i. $nameserver{$i}\n") if( $DEBUG );
+#    }
+
+    # Remove entry from listbox...
+    $resolv_listbox->delete($number, $number);
+}
+
+# ----------------------
+# proc edit_host( level )
+# Add or edit a hosts entry
+sub edit_host {
+    local($level) = @_;
+    my($cancel)   = 'Oopps';
+    my($number, $i);
+
+    printf("Calling edit_host($level)...\n") if( $DEBUG );
+
+    if( $level eq 'edit' ) {
+	# Find out what entry is selected...
+	$host_no = $hosts_listbox->index('active');
+
+#	if(! $host_no ) {
+#	    $dialog = $main_net_window->Dialog(-text           => 'What entry should I edit?',
+#					       -default_button => $cancel,
+#					       -buttons        => [$cancel]
+#	    )->Show;
+#
+#	    return(0);
+#	} else {
+#	    $host_no = $hosts;
+#	}
+    } else {
+	$host_no = $hosts;
+    }
+
+    if( Exists($add_host_window) ) {
+	$add_host_window->focus;
+    } else {
+	# Create the host addititon window...
+	$add_host_window = $main_net_window->Toplevel;
+
+	# Configure the Main window...
+	$add_host_window->title('Add host');
+	$add_host_window->iconname('add_host');
+	$add_host_window->ConfigSpecs(-resizeable => ['ACTIVE',undef,undef,1]);
+    
+	# Vertical
+	(@pl1) = (-side   => 'top',
+		  -padx   => 6,
+		  -pady   => 4,
+		  -anchor => 'w',
+		  -fill   => 'both'
+	);
+
+	# Create some vertical frames...
+	$add_host_top    = $add_host_window->Frame->pack(@pl1);
+	$add_host_bottom = $add_host_window->Frame(-relief => 'groove', -bd => 2)->pack(@pl1);
+
+	# Create the Main buttons...
+	if( $level eq 'edit' ) {
+	    main_buttons( $add_host_bottom, 'edit_host' );
+	} else {
+	    main_buttons( $add_host_bottom, 'add_host' );
+	}
+
+	# Create the Input buttons...
+	foreach $i (0, 1, 2) {
+	    $add_host_f{$i} = $add_host_top->Frame(-bd => 1);
+
+	    $add_host_l{$i} = $add_host_f{$i}->Label();
+	    $add_host_e{$i} = $add_host_f{$i}->Entry(-relief => 'sunken', -width => 20);
+
+	    $add_host_f{$i}->pack(-side => 'top', -fill => 'x');
+	    $add_host_l{$i}->pack(-side => 'left');
+	    $add_host_e{$i}->pack(-side => 'right');
+
+	    $add_host_e{$i}->focus if $i == 0;
+	}
+
+	# Configure the Input gadgets...
+	$add_host_l{0}->configure(-text => 'IP Address:',  -underline => 3);
+	$add_host_l{1}->configure(-text => 'Hostname:',    -underline => 4);
+	$add_host_l{2}->configure(-text => 'Hostaliases:', -underline => 4);
+
+	$add_host_e{0}->configure(-textvariable => \$ip_address{$host_no});
+	$add_host_e{1}->configure(-textvariable => \$hostname{$host_no});
+	$add_host_e{2}->configure(-textvariable => \$hostalias{$host_no});
+
+	# Bind action to the Input gadgets...
+	$add_host_e{0}->bind('<Return>' => sub{
+	    if( $ip_address{$host_no} =~ /[A-Za-z_]/ ) {
+		$dialog = $main_net_window->Dialog(-text           => 'Only numerical IP addresses, please',
+						   -default_button => $cancel,
+						   -buttons        => [$cancel]
+		)->Show;
+	    } else {
+		$add_host_e{1}->focus;
+	    }
+	});
+	$add_host_e{1}->bind('<Return>' => sub{$add_host_e{2}->focus});
+	$add_host_e{2}->bind('<Return>' => sub{$add_host_e{0}->focus});
+    }
+}
+
+# ----------------------
+# proc edit_name( void )
+# Edit the hostname
+sub edit_name {
+    printf("Calling edit_name(void)...\n") if( $DEBUG );
+
+    if( Exists($edit_name_window) ) {
+	return(0);
+    }
+
+    # Create the window...
+    $edit_name_window = $main_net_window->Toplevel;
+
+    # Configure the window...
+    $edit_name_window->title('Edit name');
+    $edit_name_window->iconname('edit_name');
+    $edit_name_window->ConfigSpecs(-resizeable => ['ACTIVE',undef,undef,1]);
+
+    # Create some frames...
+    $edit_name_top    = $edit_name_window->Frame->pack(@pl1);
+    $edit_name_bottom = $edit_name_window->Frame(-relief => 'groove', -bd => 2)->pack(@pl1);
+
+    foreach $i (0, 1) {
+	$edit_name_input_f{$i} = $edit_name_top->Frame(-bd => 1);
+	$edit_name_input_l{$i} = $edit_name_input_f{$i}->Label;
+	$edit_name_input_e{$i} = $edit_name_input_f{$i}->Entry(-relief => 'sunken', -width => 20);
+
+	$edit_name_input_f{$i}->pack(-side => 'top', -fill => 'x');
+	$edit_name_input_l{$i}->pack(-side => 'left');
+	$edit_name_input_e{$i}->pack(-side => 'right');
+    }
+
+    # Configure the Input gadgets...
+    $edit_name_input_l{0}->configure(-text => 'Hostname:');
+    $edit_name_input_l{1}->configure(-text => 'Domainname:');
+
+    $edit_name_input_e{0}->configure(-textvariable => \$hostname);
+    $edit_name_input_e{1}->configure(-textvariable => \$domain);
+
+    # Bind action to the Input gadgets...
+    $edit_name_input_e{0}->bind('<Return>' => sub{$edit_name_input_e{1}->focus});
+    $edit_name_input_e{1}->bind('<Return>' => sub{$edit_name_input_e{0}->focus});
+
+    # Create the Main buttons...
+    main_buttons( $edit_name_bottom, 'edit_name' );
+}
+
+# ----------------------
+# proc rem_host( void )
+# Remove a hosts entry
+sub rem_host {
+    my($number, $i);
+
+    printf("Calling rem_host(void)...\n") if( $DEBUG );
+
+    # Find out what entry is selected...
+    $number = $hosts_listbox->index('active');
+    printf("  Removing line: $number ($ip_address{$number})\n") if( $DEBUG );
+
+    # Rearange the variable...
+    for( $i = $number; $i <= $hosts; $i++ ) {
+	if( $ip_address{$i + 1} ) {
+	    $ip_address{$i} = $ip_address{$i + 1};
+	    $hostname{$i}   = $hostname{$i + 1};
+	    $hostalias{$i}  = $hostalias{$i + 1};
+	}
+    }
+
+    # Count down the number of nameservers, and delete the last variable...
+    $hosts--;
+    $ip_address{$interfaces} = "";
+    $hostname{$interfaces}   = "";
+    $hostalias{$interfaces}  = "";
+
+    # Just to verify that the rearange works...
+    for( $i = 0; $ip_address{$i}; $i++ ) {
+	printf("  %0.3d: %-15s $hostname{$i}", $i, $ip_address{$i}) if( $DEBUG );
+
+	if($hostalias{$i}) {
+	    printf("($hostalias{$i})\n") if( $DEBUG );
+	} else {
+	    printf("\n") if( $DEBUG );
+	}
+    }
+
+    # Remove entry from listbox...
+    $hosts_listbox->delete($number, $number);
+}
+
+# ----------------------
+# proc save_network( void )
+# Create the network start script
+sub save_network {
+    printf("Calling save_network(void)...\n") if( $DEBUG );
+
+    # If we have at least one interface address, open file, otherwise return
+    if( $interface_addr{0} ) {
+	# Open the network start file...
+	if(! $new_interface ) {
+	    open( START, ">$config{netstart}.new" ) || die "Could not open $config{netstart}.new...\n";
+	} else {
+	    open( START, ">$config{netstart}.$interface{$i}" ) || die "Could not open $config{netstart}.$interface{$i}...\n";
+	}
+    } else {
+	# Create the error dialog...
+	$main_net_window->Dialog(-text => 'You did not specify an IP address...',
+				 -bitmap         => 'error',
+				 -default_button => 'Ooopps'
+	)->Show;
+
+	return( 1 );
+    }
+
+    # Print a little header...
+    print START "#!/bin/sh\n";
+    print START "# Network start script, created by xAdmin/NET\n";
+    print START "# by Turbo Fredriksson <turbo\@tripnet.se>\n\n";
+
+    print START "# Set some network variables...\n";
+    # Write the interface entries one by one...
+    printf("  Number of interfaces: $interfaces\n") if( $DEBUG );
+    for( $i = 0; $i < $interfaces; $i++ ) {
+	printf("  $i. $interface{$i} ($interface_name{$i})\n") if( $DEBUG );
+
+	# Print the variables...
+	if( $interface_addr{$i} ) {
+	    print START "IPADDR_$interface_name{$i}=$interface_addr{$i}\n";}
+	if( $interface_netw{$i} ) {
+	    print START "NETWORK_$interface_name{$i}=$interface_netw{$i}\n";}
+	if( $interface_mask{$i} ) {
+	    print START "NETMASK_$interface_name{$i}=$interface_mask{$i}\n";}
+	if( $interface_broa{$i} ) {
+	    print START "BROADCAST_$interface_name{$i}=$interface_broa{$i}\n";}
+	if( $interface_gate{$i} ) {
+	    print START "GATEWAY_$interface_name{$i}=$interface_gate{$i}\n";}
+	if( $activate_interface{$i} ) {
+	    print START "ACTIVATE_$interface_name{$i}=1\n";}
+	else {
+	    print START "ACTIVATE_$interface_name{$i}=0\n";}
+
+	if( $interface_name{$i + 1} ) {
+	    print START "\#\n";}
+
+	if( $use_bridging{$i} ) {
+	    print START "\#\nINTERFACES=\"eth0 eth1\"\n";
+	}
+    }
+
+    # Set the hostname and domainname...
+    print START "\n\# Set the hostname...\n";
+    print START "if [ -f /etc/HOSTNAME ]; then\n";
+    print START "  hostname `cat /etc/HOSTNAME`\n";
+    print START "fi\n";
+    print START "\n\# Set the domainname...\n";
+    print START "if [ -f /etc/defaultdomain ]; then\n";
+    print START "  domainname `cat /etc/defaultdomain`\n";
+    print START "fi\n\n";
+
+    # Create the actual script...
+    # ===========================
+
+    print START "case \"\$1\" in\n";
+    print START "  start)\n";
+    print START "    case \"\$2\" in\n";
+
+    # START the interfaces...
+    for( $i = 0; $i < $interfaces; $i++ ) {
+	if( $activate_interface{$i} ) {
+	    print START "      $interface_name{$i})\n";
+	    print START "        \# Start only the interface $interface_name{$i} ($interface{$i})\n";
+	    print START "        if [ \"\${ACTIVATE_$interface_name{$i}}\" = 1 ]; then\n";
+	    print START "          ifconfig $interface_name{$i} \${IPADDR_$interface_name{$i}} netmask \${NETMASK_$interface_name{$i}} broadcast \${BROADCAST_$interface_name{$i}}\n";
+	    print START "          route add -net \${NETWORK_$interface_name{$i}}\n";
+	    print START "          route add default gw \${GATEWAY_$interface_name{$i}} metric 1\n";
+	    print START "        fi\n";
+	    print START "        ;;\n";
+	}
+    }
+
+    print START "      *)\n";
+    print START "        \# Start ALL the configured devices...\n\n";
+
+    for( $i = 0; $i < $interfaces; $i++ ) {
+	if( $activate_interface{$i} ) {
+	    if( $interface_name{$i} eq 'lo' ) {
+		print START "        \# Loopback device\n";
+		print START "        if [ \"\${ACTIVATE_$interface_name{$i}}\" = 1 ]; then\n";
+		print START "          ifconfig $interface_name{$i} \${IPADDR_$interface_name{$i}}\n";
+		print START "          route add -net \${NETWORK_$interface_name{$i}}\n";
+		print START "        fi\n";
+	    } else {
+		print START "        \# Interface $interface_name{$i} ($interface{$i})\n";
+		print START "        if [ \"\${ACTIVATE_$interface_name{$i}}\" = 1 ]; then\n";
+		print START "          ifconfig $interface_name{$i} \${IPADDR_$interface_name{$i}} netmask \${NETMASK_$interface_name{$i}} broadcast \${BROADCAST_$interface_name{$i}}\n";
+		print START "          route add -net \${NETWORK_$interface_name{$i}}\n";
+		print START "          route add default gw \${GATEWAY_$interface_name{$i}} metric 1\n";
+		print START "        fi\n";
+	    }
+	}
+
+	if( $use_bridging{$i} ) {
+	    print START "\n    \# Bring up the bridging\n";
+	    print START "    for i in \$INTERFACES; do\n";
+	    print START "      ifconfig \$i up promisc\n";
+	    print START "    done\n";
+	}
+
+	if( $interface_name{$i + 1} ) {
+	    print START "\n";
+	}
+    }
+
+    print START "        ;;\n";
+    print START "    esac\n";
+    print START "    ;;\n";
+    print START "  stop)\n";
+    print START "    case \"\$2\" in\n";
+
+    # STOP interfaces...
+    for( $i = 0; $i < $interfaces; $i++ ) {
+	if( $activate_interface{$i} ) {
+	    print START "      $interface_name{$i})\n";
+	    print START "        \# Stop only the interface $interface_name{$i} ($interface{$i})\n";
+	    print START "        if [ \"\${ACTIVATE_$interface_name{$i}}\" = 1 ]; then\n";
+	    print START "          ifconfig $interface_name{$i} down\n";
+	    print START "        fi\n";
+	    print START "        ;;\n";
+	}
+    }
+
+    print START "      *)\n";
+    print START "        \# STOP all the configured devices...\n";
+
+    for( $i = 0; $i < $interfaces; $i++ ) {
+	print START "        \# Interface $interface_name{$i} ($interface{$i})\n";
+	print START "        if [ \"\${ACTIVATE_$interface_name{$i}}\" = 1 ]; then\n";
+	print START "          ifconfig $interface_name{$i} down\n";
+	print START "        fi\n";
+
+	if( $interface_name{$i + 1} ) {
+	    print START "\n";
+	}
+    }
+
+    # Print a little footer...
+    print START "        ;;\n";
+    print START "    esac\n";
+    print START "    ;;\n";
+    print START "  *)\n";
+    print START "    echo \"Usage: \$0 {start|stop} [";
+
+    for( $i = 0; $i < $interfaces; $i++ ) {
+	print START "$interface_name{$i}";
+
+	if( $interface_name{$i + 1} ) {
+	    print START "|";
+	}
+    }
+
+    print START "]\"\n";
+    print START "    exit 1\n";
+    print START "    ;;\n";
+    print START "esac\n\n";
+    print START "exit 0\n";
+
+    # Close the file...
+    close( START );
+
+    # Rename the newly created file...
+    rename("$config{netstart}.new", $config{netstart});
+
+    # Make the file executable...
+    chmod( 0755, $config{netstart} );
+}
+
+# ----------------------
+# proc save_hosts( void )
+# Create the hosts file
+sub save_hosts {
+    my($i);
+
+    printf("Calling save_hosts(void)...\n") if( $DEBUG );
+
+    # If we have at least one hosts address, open file, otherwise return
+    if( $ip_address{0} ) {
+	# Open the hosts file...
+	open( HOSTS, ">$config{hosts}.new" ) || die "Could not open $config{hosts}.new...\n";
+    } else {
+	# Create the error dialog...
+	$main_net_window->Dialog(-text           => 'You did not specify any hosts...',
+				 -bitmap         => 'error',
+				 -default_button => 'Ooopps'
+	)->Show;
+
+	return( 1 );
+    }
+
+    # Print a little header...
+    print HOSTS "# Hosts file, created by xAdmin/NET\n";
+    print HOSTS "# by Turbo Fredriksson <turbo\@tripnet.se>\n\n";
+
+    printf("  Number of hosts: $hosts\n") if( $DEBUG );
+    for( $i = 0; $i < $hosts; $i++ ) {
+	if( $ip_address{$i} ) {
+	    printf("  Number %0.3d: %-15s $hostname{$i} ", $i, $ip_address{$i}) if( $DEBUG );
+
+	    print HOSTS "$ip_address{$i}\t$hostname{$i} ";
+
+	    if( $hostalias{$i} ) {
+		printf("$hostalias{$i}\n") if( $DEBUG );
+
+		print HOSTS "$hostalias{$i}\n";
+	    } else {
+		printf("\n") if( $DEBUG );
+
+		print HOSTS "\n";
+	    }
+	}
+    }
+
+    # Close the file...
+    close( HOSTS );
+
+    # Rename the files...
+    rename("$config{hosts}.new", $config{hosts});
+}
+
+# ----------------------
+# proc save_resolv( void )
+# Create the resolv.conf file
+sub save_resolv {
+    my($i);
+
+    printf("Calling save_resolv(void)...\n") if( $DEBUG );
+
+    # If we have at least one hosts address, open file, otherwise return
+    if( $nameserver{0} ) {
+	# Open the resolv.conf file...
+	open( RESOLV, ">$config{resolvconf}.new" ) || die "Could not open $config{resolvconf}.new...\n";
+    } else {
+	# Create the error dialog...
+	$main_net_window->Dialog(-text => 'You did not specify any nameservers...',
+				 -bitmap         => 'error',
+				 -default_button => 'Ooopps'
+	)->Show;
+
+	return( 1 );
+    }
+
+    for( $i = 0; $i <= $nameservers; $i++ ) {
+	# Print the nameserver entry...
+	if( $nameserver{$i} ) {
+	    print RESOLV "nameserver $nameserver{$i}\n";
+	}
+    }
+
+    # Print the domainname...
+    print RESOLV "domain $domain\n";
+    print RESOLV "search $domain\n";
+
+    # Close the file...
+    close( RESOLV );
+
+    # Rename the files...
+    rename("$config{resolvconf}.new", $config{resolvconf});
+}
+
+# ----------------------
+# proc save_domain( void )
+# Create the default domainname file
+sub save_domain {
+    printf("Calling save_domain(void)...\n") if( $DEBUG );
+
+    open( DOMAIN, ">$config{domainname}");
+    print DOMAIN "$domain\n";
+    close( DOMAIN );
+}
+
+# ----------------------
+# proc save_hostname( void )
+# Create the default hostname file
+sub save_hostname {
+    printf("Calling save_hostname(void)...\n") if( $DEBUG );
+
+    open( HOSTNAME, ">$config{hostname}");
+    print HOSTNAME "$hostname\n";
+    close( HOSTNAME );
+}
+
+# ----------------------
+# proc read_network( void )
+# Read in the network start script
+sub read_network {
+    my(@temp, $i, $j, $line);
+
+    printf("Calling read_network(void)...\n") if( $DEBUG );
+
+    if( -f $config{netstart} ) {
+	# Open the network start file...
+	if(! open( START, "$config{netstart}" ) ) {
+	    printf("  WARNING: Could not open $config{netstart}...\n") if( $DEBUG );
+	    return( 1 );
+	}
+
+	# Read the file, line by line...
+	$i = -1;
+	while(! eof(START) ) {
+	    $line = <START>;
+
+	    next if( $line =~ /^\#/ ); # Skip comments
+	    next if( $line =~ /^$/ );  # Skip empty lines
+	    chop($line);
+
+	    # Split the line...
+	    @temp = split('=', $line);
+
+	    # Remove any leading space...
+	    if( $temp[1] ) {
+		$temp[1] =~ s/^\ //;
+	    }
+
+	    if( $line =~ /^IPADDR/ ) {
+		$i++;
+		$interface_addr{$i} = $temp[1];
+
+		if( $temp[0] =~ '\_' ) {
+		    @temp = split('\_', $temp[0]);
+		    @temp = split(' ',  $temp[1]);
+		    $interface_name{$i} = $temp[0];
+
+		    if( $interface_name{$i} =~ /eth/ ) {
+			$interface{$i} = "ethernet";
+		    } elsif( $interface_name{$i} =~ /lo/ ) {
+			$interface{$i} = "loopback";
+		    } elsif( $interface_name{$i} =~ /ppp/ ) {
+			$interface{$i} = "dialout";
+		    }
+		}
+	    }
+
+	    if( $line =~ /^NETWORK/ ) {
+		$interface_netw{$i} = $temp[1];
+	    }
+
+	    if( $line =~ /^NETMASK/ ) {
+		$interface_mask{$i} = $temp[1];
+	    }
+
+	    if( $line =~ /^BROADCAST/ ) {
+		$interface_broa{$i} = $temp[1];
+	    }
+
+	    if( $line =~ /^GATEWAY/ ) {
+		$interface_gate{$i} = $temp[1];
+	    }
+
+	    if( $line =~ /^ACTIVATE/ ) {
+		$activate_interface{$i} = $temp[1];
+	    }
+	}
+
+	# Insert the variables in the listbox...
+	for( $j = 0; $j <= $i; $j++ ) {
+	    if( $interface_name{$j} ) {
+		$interface_listbox->insert($j, "interface $interface_name{$j} ($interface{$j})");
+	    } else {
+		$interface_listbox->insert($j, "interface $j");
+	    }
+	}
+
+	$interfaces = $j;
+	printf("  Number of interfaces: $interfaces\n") if( $DEBUG );
+    } else {
+	printf("  The file don't exists, starting from scratch...\n") if( $DEBUG );
+    }
+}
+
+# ----------------------
+# proc read_hosts( void )
+# Read the hosts file
+sub read_hosts {
+    my(@temp, $tmp, $line, $i, $j);
+
+    printf("Calling read_hosts(void)...\n") if( $DEBUG );
+
+    # Open the hosts file...
+    if(! open( HOSTS, $config{hosts} ) ) {
+	printf("  WARNING: Could not open $config{hosts}...\n") if( $DEBUG );
+	return( 1 );
+    }
+
+    $i = 0;
+    while(! eof(HOSTS) ) {
+	$tmp = <HOSTS>;
+
+	next if( $tmp =~ /^\#/ ); # Skip comments
+	next if( $tmp =~ /^$/ );  # Skip empty lines
+	chop($tmp);
+
+	@temp = split(' ', $tmp);
+
+	$ip_address{$i} = $temp[0];
+	$hostname{$i}   = $temp[1];
+
+	$j = 2;	$hostalias{$i} = "";
+	while( $temp[$j] ) {
+	    $hostalias{$i} .= $temp[$j];
+	    $j++;
+
+	    if( $temp[$j] ) {
+		$hostalias{$i} .= " ";
+	    }
+	}
+
+	$line  = size_string( 'right',   $ip_address{$i}, 18);
+	$line .= size_string( 'right',   $hostname{$i},   35);
+	$line .= size_string( 'right',   $hostalias{$i},  20);
+
+	$hosts_listbox->insert('end', $line);
+
+	$i++;
+    }
+
+    $hosts = $i;
+    printf("  Number of hosts: $hosts\n") if( $DEBUG );
+
+    close( HOSTS );
+}
+
+# ----------------------
+# proc read_resolv( void )
+# Read the resolv.conf file
+sub read_resolv {
+    my(@temp, $i, $line);
+
+    printf("Calling read_resolv(void)...\n") if( $DEBUG );
+
+    # Open the resolv.conf file...
+    if(! open( RESOLV, $config{resolvconf} ) ) {
+	printf("  WARNING: Could not open $config{resolvconf}...\n") if( $DEBUG );
+	return( 1 );
+    }
+
+    $i = 0;
+    while(! eof(RESOLV) ) {
+	$line = <RESOLV>;
+
+	# Split the line...
+	@temp = split(' ', $line);
+
+	if( $temp[0] eq 'nameserver' ) {
+	    $nameserver{$i} = $temp[1];
+	}
+
+	$resolv_listbox->insert('end', $nameserver{$i});
+	$i++;
+    }
+
+    close( RESOLV );
+}

@@ -1,0 +1,44 @@
+* This is a X11 program to configure the system...
+    Functions:
+	1. Add, edit or remove users
+	2. Add, edit or remove groups
+	3. Add or remove user to/from groups
+	4. Change user or group passwords
+
+* To install in '/usr/local' just type 'make' or 'make install'.
+  The main binary is installed in '/usr/local/sbin/', and the
+  libraries in '/usr/local/lib/xadmin/'. The config
+  files that is created if you choose to configure it differently
+  than originaly is stored in '/etc/xadmin'.
+
+* To uninstall program, just type 'make unintall'.
+
+* If you are unsure if this program is unsafe, then just copy
+  the following files from '/etc': passwd, group, named.boot, fstab
+  and shadow if you have that, to the source tree's 'etc' directory...
+  That way you can try it out, without risking the real files. Just
+  start it in the source tree like this: './xadmin'.
+
+* If you really whant to play it safe, you can edit the file 'xedit-users',
+  the line saying '$play_it_safe   = 0;' TO: '$play_it_safe   = 1;' that
+  way it will not overwrite the old files that you might have...
+
+* If you get the following error when starting 'xadmin':
+  ------ snipp here ------
+  Can't find loadable object for module Tk in @INC (
+    ( /usr/lib/perl5/i386-linux/5.00307
+      /usr/lib/perl5
+      /usr/local/lib/site_perl/i386-linux
+      /usr/local/lib/site_perl
+      .) at xadmin line 34
+  BEGIN failed--compilation aborted at xadmin line 34.
+  ------ snipp here ------
+  then enter the following lines:
+    cd /usr/lib/perl5/i386-linux/5.00307/auto
+    ln -s ../../../i486-linux/5.003/auto/Tk
+
+  The problem here is that perl can not find the perltk stuff in the right
+  directory...
+
+* If you have any bugg reports, any questions etc, please feel free to
+  send me an email at turbo@tripnet.se, or turbo@debian.org.

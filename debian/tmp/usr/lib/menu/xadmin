@@ -1,0 +1,2 @@
+?package(xadmin):needs="X11" section=Apps/System \
+  title="xAdmin" command="/usr/X11R6/bin/xadmin"
